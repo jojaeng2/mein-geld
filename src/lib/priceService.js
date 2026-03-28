@@ -19,16 +19,46 @@ async function fetchKoreanStockPrice(symbol) {
   const code = symbol.replace(/\.(KS|KQ)$/, '')
   const naverUrl = `https://m.stock.naver.com/api/stock/${code}/basic`
   const isLocal = window.location.hostname === 'localhost'
-  const url = isLocal
-    ? `/naver-stock/api/stock/${code}/basic`
-    : `https://api.allorigins.win/raw?url=${encodeURIComponent(naverUrl)}`
 
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('가격 조회 실패')
-  const data = await res.json()
-  const price = data?.closePrice ? parseFloat(data.closePrice.replace(/,/g, '')) : null
-  if (!price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
-  return price
+  if (isLocal) {
+    const res = await fetch(`/naver-stock/api/stock/${code}/basic`)
+    if (!res.ok) throw new Error('가격 조회 실패')
+    const data = await res.json()
+    const price = data?.closePrice ? parseFloat(data.closePrice.replace(/,/g, '')) : null
+    if (!price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
+    return price
+  }
+
+  // 프로덕션: allorigins /get (wrapped JSON) → corsproxy.io 순서로 시도
+  const proxies = [
+    async () => {
+      const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(naverUrl)}`)
+      if (!res.ok) throw new Error(`allorigins ${res.status}`)
+      const wrapper = await res.json()
+      console.log('[naver proxy] allorigins wrapper:', wrapper)
+      return JSON.parse(wrapper.contents)
+    },
+    async () => {
+      const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(naverUrl)}`)
+      if (!res.ok) throw new Error(`corsproxy ${res.status}`)
+      const data = await res.json()
+      console.log('[naver proxy] corsproxy data:', data)
+      return data
+    },
+  ]
+
+  let lastError
+  for (const tryProxy of proxies) {
+    try {
+      const data = await tryProxy()
+      const price = data?.closePrice ? parseFloat(data.closePrice.replace(/,/g, '')) : null
+      if (price) return price
+    } catch (e) {
+      console.warn('[naver proxy] failed:', e.message)
+      lastError = e
+    }
+  }
+  throw new Error(`가격 조회 실패: ${lastError?.message ?? symbol}`)
 }
 
 // 미국 주식/ETF 현재가 (Twelve Data — 800회/일)
