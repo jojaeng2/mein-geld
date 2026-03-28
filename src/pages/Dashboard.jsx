@@ -79,9 +79,9 @@ export default function Dashboard() {
     if (savedRef.current) return
     savedRef.current = true
     const today = new Date().toISOString().slice(0, 10)
-    const existing = snapshots.find((s) => s.date === today)
+    const existing = snapshots.filter((s) => s.date === today)
     const run = async () => {
-      if (existing) await deleteSnapshot(existing.id)
+      await Promise.all(existing.map((s) => deleteSnapshot(s.id)))
       await saveSnapshot({
         date: today,
         totalKRW: currentTotal,
