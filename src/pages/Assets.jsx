@@ -291,7 +291,7 @@ function AssetModal({ initial, onSave, onClose }) {
       payload.currentPrice  = deposit
       payload.ticker        = ''
     } else {
-      payload.quantity      = Number(form.quantity)
+      payload.quantity      = isInvestment ? Number(form.quantity) : 1
       payload.purchasePrice = Number(form.purchasePrice)
       payload.currentPrice  = Number(form.currentPrice)
       payload.divRate       = Number(form.divRate) || 0
