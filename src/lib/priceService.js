@@ -35,21 +35,6 @@ export async function fetchAssetPrice(asset, exchangeRate) {
   }
 }
 
-// 주식 종목 검색 (Alpha Vantage SYMBOL_SEARCH)
-export async function searchStockTicker(keywords) {
-  const res = await fetch(
-    `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${encodeURIComponent(keywords)}&apikey=${AV_KEY}`
-  )
-  if (!res.ok) throw new Error('검색 실패')
-  const data = await res.json()
-  return (data.bestMatches || []).map((m) => ({
-    symbol: m['1. symbol'],
-    name: m['2. name'],
-    region: m['4. region'],
-    currency: m['8. currency'],
-  }))
-}
-
 // 코인 검색 (CoinGecko search)
 export async function searchCryptoTicker(query) {
   const res = await fetch(

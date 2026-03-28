@@ -3,7 +3,8 @@ import { useAssets } from '../hooks/useAssets'
 import { useSettings } from '../hooks/useSettings'
 import { CATEGORIES, CURRENCIES } from '../lib/constants'
 import { formatKRW, formatUSD, toKRW, calcReturn } from '../lib/utils'
-import { fetchAssetPrice, searchStockTicker, searchCryptoTicker } from '../lib/priceService'
+import { fetchAssetPrice, searchCryptoTicker } from '../lib/priceService'
+import { searchLocalStocks } from '../lib/stockList'
 
 const EMPTY_FORM = {
   name: '',
@@ -40,19 +41,22 @@ function TickerSearch({ category, onSelect }) {
     clearTimeout(timerRef.current)
     if (!val.trim()) { setResults([]); return }
 
-    timerRef.current = setTimeout(async () => {
-      setSearching(true)
-      try {
-        const res = category === 'crypto'
-          ? await searchCryptoTicker(val)
-          : await searchStockTicker(val)
-        setResults(res)
-      } catch {
-        setResults([])
-      } finally {
-        setSearching(false)
-      }
-    }, 600)
+    if (category === 'crypto') {
+      // 암호화폐: CoinGecko API (무제한)
+      timerRef.current = setTimeout(async () => {
+        setSearching(true)
+        try {
+          setResults(await searchCryptoTicker(val))
+        } catch {
+          setResults([])
+        } finally {
+          setSearching(false)
+        }
+      }, 500)
+    } else {
+      // 주식/ETF: 로컬 데이터 검색 (API 사용 0회, 즉시 응답)
+      setResults(searchLocalStocks(val))
+    }
   }
 
   function handleSelect(item) {
@@ -92,12 +96,12 @@ function TickerSearch({ category, onSelect }) {
                   <span className="text-xs text-gray-400 font-mono">{item.ticker}</span>
                 </div>
               ) : (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white text-sm">{item.name}</span>
-                    <span className="text-xs font-mono text-brand-400">{item.symbol}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-white text-sm">{item.name}</span>
+                  <div className="text-right">
+                    <span className="text-xs font-mono text-brand-400 block">{item.symbol}</span>
+                    <span className="text-xs text-gray-500">{item.market}</span>
                   </div>
-                  <span className="text-xs text-gray-500">{item.region} · {item.currency}</span>
                 </div>
               )}
             </button>
@@ -125,9 +129,9 @@ function AssetModal({ initial, onSave, onClose, exchangeRate }) {
     } else {
       set('ticker', item.symbol)
       if (!form.name) set('name', item.name)
-      // 해외주식이면 통화 자동 설정
-      if (item.currency === 'USD') set('currency', 'USD')
-      else if (item.currency === 'KRW') set('currency', 'KRW')
+      // 국내주식(KS/KQ)이면 KRW, 그 외엔 USD
+      const isKorean = item.symbol.endsWith('.KS') || item.symbol.endsWith('.KQ')
+      set('currency', isKorean ? 'KRW' : 'USD')
     }
   }
 
