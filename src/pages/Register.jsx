@@ -35,7 +35,7 @@ export default function Register() {
       } else if (err.code === 'auth/email-already-in-use') {
         setError('이미 사용 중인 이메일입니다.')
       } else {
-        setError('회원가입에 실패했습니다. 다시 시도해주세요.')
+        setError(`회원가입에 실패했습니다: ${err.message || err.code || '알 수 없는 오류'}`)
       }
     } finally {
       setLoading(false)
