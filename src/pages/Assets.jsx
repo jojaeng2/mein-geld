@@ -566,7 +566,7 @@ export default function Assets() {
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">자산 관리</h2>
-        <button onClick={() => setModal('add')}
+        <button onClick={() => setModal({})}
           className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition">
           + 자산 추가
         </button>
@@ -640,7 +640,7 @@ export default function Assets() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
-                          <button onClick={() => setModal('add')} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
+                          <button onClick={() => setModal({ name, ticker, category, currency })} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
                           <button onClick={() => setSellModal({ name, ticker, category, currency, records, totalQty, avgPurchasePrice })}
                             className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
                         </div>
@@ -728,11 +728,13 @@ export default function Assets() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 justify-end">
-                        {['stock', 'crypto'].includes(asset.category) && (
+                        {['stock', 'crypto'].includes(asset.category) && (<>
+                          <button onClick={() => setModal({ name: asset.name, ticker: asset.ticker, category: asset.category, currency: asset.currency })}
+                            className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
                           <button
                             onClick={() => setSellModal({ name: asset.name, ticker: asset.ticker, category: asset.category, currency: asset.currency, records: [asset], totalQty: asset.quantity, avgPurchasePrice: asset.purchasePrice })}
                             className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
-                        )}
+                        </>)}
                         <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
                         <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
                       </div>
@@ -803,9 +805,9 @@ export default function Assets() {
         </div>
       )}
 
-      {modal && (
+      {modal !== null && (
         <AssetModal
-          initial={modal === 'add' ? null : modal}
+          initial={modal}
           onSave={handleSave}
           onClose={() => setModal(null)}
         />
