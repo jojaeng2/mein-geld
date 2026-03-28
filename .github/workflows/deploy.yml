@@ -38,6 +38,7 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
           VITE_TWELVE_DATA_KEY: ${{ secrets.VITE_TWELVE_DATA_KEY }}
           VITE_ALPHA_VANTAGE_KEY: ${{ secrets.VITE_ALPHA_VANTAGE_KEY }}
+          VITE_KR_PROXY_URL: ${{ secrets.VITE_KR_PROXY_URL }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -13,16 +13,18 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
-// 한국 주식/ETF 현재가 (Yahoo Finance — CORS 허용, .KS/.KQ 지원)
+// 한국 주식/ETF 현재가 (Cloudflare Worker → Naver Finance)
 async function fetchKoreanStockPrice(symbol) {
-  const res = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
-  )
+  const proxyUrl = import.meta.env.VITE_KR_PROXY_URL
+  if (!proxyUrl) throw new Error('VITE_KR_PROXY_URL 환경변수가 설정되지 않았습니다.')
+
+  const code = symbol.replace(/\.(KS|KQ)$/, '')
+  const res = await fetch(`${proxyUrl}?code=${code}`)
   if (!res.ok) throw new Error('가격 조회 실패')
   const data = await res.json()
-  const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
-  if (!price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
-  return price
+  const priceStr = data?.closePrice
+  if (!priceStr) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
+  return parseFloat(priceStr.replace(/,/g, ''))
 }
 
 // 미국 주식/ETF 현재가 (Twelve Data — 800회/일)
