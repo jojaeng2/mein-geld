@@ -485,16 +485,16 @@ export default function Assets() {
       map.get(key).push(asset)
     }
     return Array.from(map.values()).map((records) => {
-      if (!records[0].ticker || records.length === 1) return { isGroup: false, asset: records[0] }
-      const totalQty        = records.reduce((s, a) => s + a.quantity, 0)
-      const totalPurchaseAmt = records.reduce((s, a) => s + a.purchasePrice * a.quantity, 0)
-      const avgPurchasePrice = totalPurchaseAmt / totalQty
+      const isInvestment     = ['stock', 'crypto'].includes(records[0].category)
+      const totalQty         = records.reduce((s, a) => s + (a.quantity ?? 1), 0)
+      const totalPurchaseAmt = records.reduce((s, a) => s + a.purchasePrice * (a.quantity ?? 1), 0)
+      const avgPurchasePrice = totalQty > 0 ? totalPurchaseAmt / totalQty : records[0].purchasePrice
       return {
-        isGroup: true,
         ticker: records[0].ticker,
         name: records[0].name,
         category: records[0].category,
         currency: records[0].currency,
+        isInvestment,
         totalQty,
         avgPurchasePrice,
         currentPrice: records[0].currentPrice,
@@ -607,140 +607,124 @@ export default function Assets() {
             </thead>
             <tbody>
               {displayGroups.map((row) => {
-                if (row.isGroup) {
-                  const { ticker, name, category, currency, totalQty, avgPurchasePrice, currentPrice, records } = row
-                  const rate      = settings.exchangeRate
-                  const totalVal  = toKRW(currentPrice, totalQty, currency, rate)
-                  const profitRate = calcReturn(avgPurchasePrice, currentPrice)
-                  const sym       = CURRENCIES[currency]?.symbol
-                  const isExpanded = expanded.has(ticker)
-                  return [
-                    <tr key={`g_${ticker}`} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => toggleExpand(ticker)} className="text-gray-500 hover:text-white text-xs w-4 flex-shrink-0">
-                            {isExpanded ? '▼' : '▶'}
-                          </button>
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[category]?.color }} />
-                          <div>
-                            <p className="text-white font-medium">{name}</p>
-                            <p className="text-xs text-gray-500 font-mono">{ticker} · {records.length}건</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-400">{CATEGORIES[category]?.label}</td>
-                      <td className="px-4 py-3 text-right text-gray-300">{totalQty.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-right text-gray-300">
-                        {sym}{currency === 'KRW' ? formatKRW(currentPrice) : formatUSD(currentPrice)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(totalVal)}</td>
-                      <td className={`px-4 py-3 text-right font-medium ${profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {profitRate >= 0 ? '+' : ''}{profitRate.toFixed(2)}%
-                        <p className="text-xs text-gray-500 font-normal">평균 {sym}{currency === 'KRW' ? formatKRW(avgPurchasePrice) : formatUSD(avgPurchasePrice)}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1 justify-end">
-                          <button onClick={() => setModal({ name, ticker, category, currency })} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
-                          <button onClick={() => setSellModal({ name, ticker, category, currency, records, totalQty, avgPurchasePrice })}
-                            className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
-                        </div>
-                      </td>
-                    </tr>,
-                    ...(isExpanded ? records.map((asset) => {
-                      const subProfitRate = calcReturn(asset.purchasePrice, currentPrice)
-                      const subVal = toKRW(currentPrice, asset.quantity, currency, settings.exchangeRate)
-                      return (
-                        <tr key={`sub_${asset.id}`} className="border-b border-gray-800/30 bg-gray-800/20">
-                          <td className="px-5 py-2 pl-14">
-                            <p className="text-xs text-gray-400">{asset.memo || `${asset.quantity}주 @ ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}`}</p>
-                          </td>
-                          <td /><td className="px-4 py-2 text-right text-xs text-gray-500">{asset.quantity.toLocaleString()}</td>
-                          <td className="px-4 py-2 text-right text-xs text-gray-500">매입 {sym}{currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}</td>
-                          <td className="px-4 py-2 text-right text-xs text-gray-400">₩{formatKRW(subVal)}</td>
-                          <td className={`px-4 py-2 text-right text-xs ${subProfitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>{subProfitRate >= 0 ? '+' : ''}{subProfitRate.toFixed(2)}%</td>
-                          <td className="px-4 py-2">
-                            <div className="flex gap-2 justify-end">
-                              <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
-                              <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    }) : []),
-                  ]
-                }
+                const { ticker, name, category, currency, isInvestment, totalQty, avgPurchasePrice, currentPrice, records } = row
+                const rate      = settings.exchangeRate
+                const isDeposit = category === 'cash'
+                const isRE      = category === 'real_estate'
+                const totalVal  = isInvestment
+                  ? toKRW(currentPrice, totalQty, currency, rate)
+                  : toKRW(records[0].currentPrice, records[0].quantity ?? 1, records[0].currency, rate)
+                const profitRate = isInvestment
+                  ? calcReturn(avgPurchasePrice, currentPrice)
+                  : calcReturn(records[0].purchasePrice, records[0].currentPrice)
+                const sym       = CURRENCIES[currency]?.symbol
+                const expandKey = ticker || records[0].id
+                const isExpanded = expanded.has(expandKey)
 
-                // 단일 자산
-                const { asset } = row
-                const rate       = settings.exchangeRate
-                const currentVal = toKRW(asset.currentPrice, asset.quantity, asset.currency, rate)
-                const isDeposit  = asset.category === 'cash'
-                const isRE       = asset.category === 'real_estate'
-                const profitRate = calcReturn(asset.purchasePrice, asset.currentPrice)
-                const sym        = CURRENCIES[asset.currency]?.symbol
-
-                // 만기일까지 남은 일수
-                const daysLeft = asset.maturityDate
-                  ? Math.ceil((new Date(asset.maturityDate) - new Date()) / (1000 * 60 * 60 * 24))
-                  : null
-
-                return (
-                  <tr key={asset.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
+                return [
+                  <tr key={`g_${expandKey}`} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
                     <td className="px-5 py-3">
-                      <div className="flex items-center gap-2 pl-6">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[asset.category]?.color }} />
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleExpand(expandKey)} className="text-gray-500 hover:text-white text-xs w-4 flex-shrink-0">
+                          {isExpanded ? '▼' : '▶'}
+                        </button>
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[category]?.color }} />
                         <div>
-                          <p className="text-white font-medium">{asset.name}</p>
-                          {asset.ticker && <p className="text-xs text-gray-500 font-mono">{asset.ticker}</p>}
-                          {asset.maturityDate && (
-                            <p className={`text-xs ${daysLeft < 30 ? 'text-yellow-400' : 'text-gray-500'}`}>
-                              만기 {asset.maturityDate} {daysLeft != null && `(D-${daysLeft})`}
-                            </p>
-                          )}
-                          {asset.memo && !asset.ticker && !asset.maturityDate && (
-                            <p className="text-xs text-gray-500">{asset.memo}</p>
-                          )}
+                          <p className="text-white font-medium">{name}</p>
+                          {ticker && <p className="text-xs text-gray-500 font-mono">{ticker}{records.length > 1 ? ` · ${records.length}건` : ''}</p>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-400">{CATEGORIES[asset.category]?.label}</td>
+                    <td className="px-4 py-3 text-gray-400">{CATEGORIES[category]?.label}</td>
                     <td className="px-4 py-3 text-right text-gray-300">
-                      {isDeposit || isRE ? '—' : asset.quantity.toLocaleString()}
+                      {isDeposit || isRE ? '—' : totalQty.toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-300">
                       {isDeposit ? (
                         <div>
-                          <p className="text-xs text-gray-500">원금 {sym}{formatKRW(asset.purchasePrice)}</p>
-                          <p>만기 {sym}{formatKRW(asset.currentPrice)}</p>
+                          <p className="text-xs text-gray-500">원금 {sym}{formatKRW(records[0].purchasePrice)}</p>
+                          <p>만기 {sym}{formatKRW(records[0].currentPrice)}</p>
                         </div>
                       ) : isRE ? (
-                        <span>보증금 {sym}{formatKRW(asset.currentPrice)}</span>
+                        <span>보증금 {sym}{formatKRW(records[0].currentPrice)}</span>
                       ) : (
-                        <span>{sym}{asset.currency === 'KRW' ? formatKRW(asset.currentPrice) : formatUSD(asset.currentPrice)}</span>
+                        <span>{sym}{currency === 'KRW' ? formatKRW(currentPrice) : formatUSD(currentPrice)}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(currentVal)}</td>
+                    <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(totalVal)}</td>
                     <td className={`px-4 py-3 text-right font-medium ${isRE ? 'text-gray-500' : profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {isRE ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%`}
-                      {isDeposit && asset.interestRate > 0 && (
-                        <p className="text-xs text-gray-500 font-normal">연 {asset.interestRate}%</p>
+                      {isDeposit && records[0].interestRate > 0 && (
+                        <p className="text-xs text-gray-500 font-normal">연 {records[0].interestRate}%</p>
+                      )}
+                      {isInvestment && (
+                        <p className="text-xs text-gray-500 font-normal">평균 {sym}{currency === 'KRW' ? formatKRW(avgPurchasePrice) : formatUSD(avgPurchasePrice)}</p>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1 justify-end">
-                        {['stock', 'crypto'].includes(asset.category) && (<>
-                          <button onClick={() => setModal({ name: asset.name, ticker: asset.ticker, category: asset.category, currency: asset.currency })}
+                        {isInvestment && (<>
+                          <button onClick={() => setModal({ name, ticker, category, currency })}
                             className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
-                          <button
-                            onClick={() => setSellModal({ name: asset.name, ticker: asset.ticker, category: asset.category, currency: asset.currency, records: [asset], totalQty: asset.quantity, avgPurchasePrice: asset.purchasePrice })}
+                          <button onClick={() => setSellModal({ name, ticker, category, currency, records, totalQty, avgPurchasePrice })}
                             className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
                         </>)}
-                        <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
-                        <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
                       </div>
                     </td>
-                  </tr>
-                )
+                  </tr>,
+
+                  ...(isExpanded ? records.map((asset) => {
+                    const subProfitRate = isInvestment
+                      ? calcReturn(asset.purchasePrice, currentPrice)
+                      : calcReturn(asset.purchasePrice, asset.currentPrice)
+                    const subVal = toKRW(
+                      isInvestment ? currentPrice : asset.currentPrice,
+                      asset.quantity ?? 1, currency, settings.exchangeRate
+                    )
+                    const daysLeft = asset.maturityDate
+                      ? Math.ceil((new Date(asset.maturityDate) - new Date()) / 86400000)
+                      : null
+
+                    return (
+                      <tr key={`sub_${asset.id}`} className="border-b border-gray-800/30 bg-gray-800/20">
+                        <td className="px-5 py-2.5 pl-14">
+                          {isDeposit ? (
+                            <div className="text-xs text-gray-400 space-y-0.5">
+                              <p>원금 {sym}{formatKRW(asset.purchasePrice)} → 만기 {sym}{formatKRW(asset.currentPrice)}</p>
+                              {asset.interestRate > 0 && <p className="text-gray-500">연 {asset.interestRate}% · {asset.startDate} ~ {asset.maturityDate}</p>}
+                            </div>
+                          ) : isRE ? (
+                            <p className="text-xs text-gray-400">보증금 {sym}{formatKRW(asset.currentPrice)}{asset.memo ? ` · ${asset.memo}` : ''}</p>
+                          ) : (
+                            <p className="text-xs text-gray-400">{asset.memo || `${asset.quantity}주 @ ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}`}</p>
+                          )}
+                          {daysLeft !== null && (
+                            <p className={`text-xs mt-0.5 ${daysLeft < 30 ? 'text-yellow-400' : daysLeft < 90 ? 'text-yellow-600' : 'text-gray-500'}`}>
+                              만기 {asset.maturityDate} (D-{daysLeft})
+                            </p>
+                          )}
+                        </td>
+                        <td />
+                        <td className="px-4 py-2 text-right text-xs text-gray-500">
+                          {!isDeposit && !isRE ? asset.quantity?.toLocaleString() : ''}
+                        </td>
+                        <td className="px-4 py-2 text-right text-xs text-gray-500">
+                          {isInvestment ? `매입 ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}` : ''}
+                        </td>
+                        <td className="px-4 py-2 text-right text-xs text-gray-400">₩{formatKRW(subVal)}</td>
+                        <td className={`px-4 py-2 text-right text-xs ${isRE ? 'text-gray-500' : subProfitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {!isRE ? `${subProfitRate >= 0 ? '+' : ''}${subProfitRate.toFixed(2)}%` : ''}
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
+                            <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }) : []),
+                ]
               })}
             </tbody>
           </table>
