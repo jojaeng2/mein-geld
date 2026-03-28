@@ -1,5 +1,4 @@
 const TD_KEY = import.meta.env.VITE_TWELVE_DATA_KEY
-const AV_KEY = import.meta.env.VITE_ALPHA_VANTAGE_KEY
 
 const isKoreanTicker = (symbol) => symbol.endsWith('.KS') || symbol.endsWith('.KQ')
 
@@ -14,16 +13,16 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
-// 한국 주식/ETF 현재가 (Alpha Vantage — .KS/.KQ)
+// 한국 주식/ETF 현재가 (Yahoo Finance via allorigins CORS 프록시 — 무료, 무제한)
 async function fetchKoreanStockPrice(symbol) {
-  const res = await fetch(
-    `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${AV_KEY}`
-  )
-  if (!res.ok) throw new Error('Alpha Vantage 조회 실패')
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`
+  const res = await fetch(proxyUrl)
+  if (!res.ok) throw new Error('가격 조회 실패')
   const data = await res.json()
-  const quote = data['Global Quote']
-  if (!quote || !quote['05. price']) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
-  return parseFloat(quote['05. price'])
+  const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
+  if (!price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
+  return price
 }
 
 // 미국 주식/ETF 현재가 (Twelve Data — 800회/일)
