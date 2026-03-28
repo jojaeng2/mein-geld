@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Assets from './pages/Assets'
 import History from './pages/History'
 import Settings from './pages/Settings'
+import Calculator from './pages/Calculator'
 
 function AppRoutes() {
   return (
@@ -23,6 +24,7 @@ function AppRoutes() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/assets" element={<Assets />} />
                 <Route path="/history" element={<History />} />
+                <Route path="/calculator" element={<Calculator />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

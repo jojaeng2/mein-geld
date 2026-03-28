@@ -7,6 +7,7 @@ const navItems = [
   { to: '/', label: '대시보드', icon: '▦' },
   { to: '/assets', label: '자산 관리', icon: '◈' },
   { to: '/history', label: '히스토리', icon: '◷' },
+  { to: '/calculator', label: '복리 계산기', icon: '◎' },
   { to: '/settings', label: '설정', icon: '⚙' },
 ]
 
