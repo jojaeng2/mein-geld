@@ -194,30 +194,50 @@ export default function Dashboard() {
   const taxableGain  = Math.max(0, overseasGainThisYear - DEDUCTION)
   const estimatedTax = Math.round(taxableGain * 0.22)
 
-  // 예상 배당금: 티커별로 묶어서 divPerShare × 총수량 계산
+  // 예상 배당금: 티커별로 묶어서 매수/매도 시점 반영한 월별 실보유량으로 계산
   const dividendByMonth = useMemo(() => {
     const rate = settings.exchangeRate
+    const year = new Date().getFullYear()
     const monthly = Array(12).fill(0)
-    // 티커별 그룹화 (티커 없는 자산 제외)
+
+    // 티커별 그룹화
     const map = new Map()
     for (const asset of assets) {
       if (!asset.ticker) continue
       if (!map.has(asset.ticker)) map.set(asset.ticker, [])
       map.get(asset.ticker).push(asset)
     }
-    for (const [, records] of map) {
-      // divPerShare/divMonths는 모든 레코드에 동일하게 저장 — 첫 번째에서 읽음
+
+    for (const [ticker, records] of map) {
       const rep = records.find((r) => r.divPerShare > 0) ?? records[0]
       if (!rep.divPerShare || !rep.divMonths?.length) continue
-      const totalQty = records.reduce((s, r) => s + (r.quantity ?? 0), 0)
-      const divKRW = toKRW(rep.divPerShare, totalQty, rep.currency, rate)
-      const perPayout = divKRW / rep.divMonths.length
+
+      // 해당 티커의 매도 기록 (올해)
+      const tickerSells = sells.filter((s) => s.ticker === ticker && s.sellDate?.startsWith(String(year)))
+
       for (const m of rep.divMonths) {
-        monthly[m - 1] += perPayout
+        // 배당 지급 월의 첫째 날 기준으로 보유량 계산
+        const cutoff = `${year}-${String(m).padStart(2, '0')}-01`
+
+        // 해당 월 이전에 매수한 수량 합산
+        const boughtQty = records.reduce((s, r) => {
+          const pd = r.purchaseDate ?? (r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toISOString().slice(0, 10) : '1970-01-01')
+          return pd < cutoff ? s + (r.quantity ?? 0) : s
+        }, 0)
+
+        // 해당 월 이전에 매도한 수량 차감
+        const soldQty = tickerSells.reduce((s, sell) => {
+          return sell.sellDate < cutoff ? s + (sell.quantity ?? 0) : s
+        }, 0)
+
+        const netQty = Math.max(0, boughtQty - soldQty)
+        if (netQty === 0) continue
+
+        monthly[m - 1] += toKRW(rep.divPerShare, netQty, rep.currency, rate)
       }
     }
     return monthly
-  }, [assets, settings.exchangeRate])
+  }, [assets, sells, settings.exchangeRate])
 
   const annualDividend = dividendByMonth.reduce((s, v) => s + v, 0)
   const now = new Date()

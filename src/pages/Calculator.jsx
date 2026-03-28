@@ -99,14 +99,19 @@ export default function Calculator() {
           (s, a) => s + toKRW(a.currentPrice, a.quantity, a.currency, exRate), 0
         )
         const cat = records[0].category
+        const rep = records[0]
+        // 배당률 자동 계산: divPerShare × 연간 지급 횟수 / 현재 단가
+        const autoDivRate = rep.divPerShare && rep.divMonths?.length && rep.currentPrice
+          ? (rep.divPerShare * rep.divMonths.length) / rep.currentPrice * 100
+          : 0
         return {
           key,
-          name: records[0].name,
-          ticker: records[0].ticker,
+          name: rep.name,
+          ticker: rep.ticker,
           category: cat,
           currentValue,
           capitalRate: capitalRates[key] ?? DEFAULT_CAPITAL[cat] ?? 8,
-          divRate:     divRates[key]     ?? records[0].divRate ?? DEFAULT_DIVIDEND[cat] ?? 0,
+          divRate:     divRates[key]     ?? autoDivRate,
         }
       })
       .filter((g) => g.currentValue > 0)

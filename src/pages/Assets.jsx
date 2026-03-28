@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   divRate: '',
   divPerShare: '',
   divMonths: [],
+  purchaseDate: TODAY,
   memo: '',
   // 예금/적금 전용
   interestRate: '',
@@ -274,6 +275,7 @@ function AssetModal({ initial, onSave, onClose }) {
       payload.divRate       = Number(form.divRate) || 0
       payload.divPerShare   = Number(form.divPerShare) || 0
       payload.divMonths     = form.divMonths || []
+      payload.purchaseDate  = form.purchaseDate || TODAY
     }
 
     await onSave(payload)
@@ -344,6 +346,12 @@ function AssetModal({ initial, onSave, onClose }) {
                   <input required type="number" min="0" step="any" className="input" placeholder="0"
                     value={form.purchasePrice} onChange={(e) => set('purchasePrice', e.target.value)} />
                 </div>
+              </div>
+
+              <div>
+                <label className="label">매입 날짜</label>
+                <input type="date" className="input" max={TODAY}
+                  value={form.purchaseDate} onChange={(e) => set('purchaseDate', e.target.value)} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
