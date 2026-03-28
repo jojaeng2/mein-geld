@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAssets } from '../hooks/useAssets'
 import { useSettings } from '../hooks/useSettings'
 import { CATEGORIES, CURRENCIES } from '../lib/constants'
 import { formatKRW, formatUSD, toKRW, calcReturn } from '../lib/utils'
-import { fetchAssetPrice } from '../lib/priceService'
+import { fetchAssetPrice, searchStockTicker, searchCryptoTicker } from '../lib/priceService'
 
 const EMPTY_FORM = {
   name: '',
@@ -16,16 +16,99 @@ const EMPTY_FORM = {
   memo: '',
 }
 
-const TICKER_HINTS = {
-  stock: '국내: 005930.KS / 미국: AAPL',
-  crypto: 'bitcoin, ethereum, ripple',
-  cash: '',
-  real_estate: '',
-  pension: '',
-  other: '',
+function TickerSearch({ category, onSelect }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [open, setOpen] = useState(false)
+  const timerRef = useRef(null)
+  const wrapperRef = useRef(null)
+
+  // 바깥 클릭 시 닫기
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  function handleInput(e) {
+    const val = e.target.value
+    setQuery(val)
+    setOpen(true)
+    clearTimeout(timerRef.current)
+    if (!val.trim()) { setResults([]); return }
+
+    timerRef.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = category === 'crypto'
+          ? await searchCryptoTicker(val)
+          : await searchStockTicker(val)
+        setResults(res)
+      } catch {
+        setResults([])
+      } finally {
+        setSearching(false)
+      }
+    }, 600)
+  }
+
+  function handleSelect(item) {
+    onSelect(item)
+    setQuery('')
+    setResults([])
+    setOpen(false)
+  }
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        className="input"
+        placeholder={category === 'crypto' ? '코인명 검색 (예: bitcoin)' : '종목명 검색 (예: 삼성전자)'}
+        value={query}
+        onChange={handleInput}
+        onFocus={() => results.length && setOpen(true)}
+      />
+      {open && (query || searching) && (
+        <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
+          {searching && (
+            <div className="px-4 py-3 text-xs text-gray-400">검색 중...</div>
+          )}
+          {!searching && results.length === 0 && query && (
+            <div className="px-4 py-3 text-xs text-gray-500">검색 결과 없음</div>
+          )}
+          {results.map((item, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => handleSelect(item)}
+              className="w-full text-left px-4 py-2.5 hover:bg-gray-700 transition border-b border-gray-700/50 last:border-0"
+            >
+              {category === 'crypto' ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-white text-sm">{item.name}</span>
+                  <span className="text-xs text-gray-400 font-mono">{item.ticker}</span>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-white text-sm">{item.name}</span>
+                    <span className="text-xs font-mono text-brand-400">{item.symbol}</span>
+                  </div>
+                  <span className="text-xs text-gray-500">{item.region} · {item.currency}</span>
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
-function AssetModal({ initial, onSave, onClose, alphaVantageKey, exchangeRate }) {
+function AssetModal({ initial, onSave, onClose, exchangeRate }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [fetchingPrice, setFetchingPrice] = useState(false)
@@ -35,6 +118,19 @@ function AssetModal({ initial, onSave, onClose, alphaVantageKey, exchangeRate })
     setForm((f) => ({ ...f, [field]: value }))
   }
 
+  function handleTickerSelect(item) {
+    if (form.category === 'crypto') {
+      set('ticker', item.symbol) // CoinGecko ID
+      if (!form.name) set('name', item.name)
+    } else {
+      set('ticker', item.symbol)
+      if (!form.name) set('name', item.name)
+      // 해외주식이면 통화 자동 설정
+      if (item.currency === 'USD') set('currency', 'USD')
+      else if (item.currency === 'KRW') set('currency', 'KRW')
+    }
+  }
+
   async function handleFetchPrice() {
     if (!form.ticker) return
     setPriceError('')
@@ -42,7 +138,6 @@ function AssetModal({ initial, onSave, onClose, alphaVantageKey, exchangeRate })
     try {
       const price = await fetchAssetPrice(
         { ticker: form.ticker, category: form.category, currency: form.currency },
-        alphaVantageKey,
         exchangeRate
       )
       set('currentPrice', String(price))
@@ -114,31 +209,34 @@ function AssetModal({ initial, onSave, onClose, alphaVantageKey, exchangeRate })
             </div>
 
             {hasTicker && (
-              <div className="col-span-2">
-                <label className="label">
-                  티커 코드{' '}
-                  <span className="text-gray-600 font-normal">(자동 가격 조회용)</span>
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    className="input"
-                    placeholder={TICKER_HINTS[form.category]}
-                    value={form.ticker}
-                    onChange={(e) => set('ticker', e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    disabled={!form.ticker || fetchingPrice}
-                    onClick={handleFetchPrice}
-                    className="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white text-xs rounded-lg transition whitespace-nowrap"
-                  >
-                    {fetchingPrice ? '조회 중...' : '가격 조회'}
-                  </button>
-                </div>
-                {priceError && (
-                  <p className="text-xs text-red-400 mt-1">{priceError}</p>
+              <div className="col-span-2 space-y-2">
+                <label className="label">종목 검색</label>
+                <TickerSearch category={form.category} onSelect={handleTickerSelect} />
+
+                {form.ticker && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-gray-800 rounded-lg border border-gray-700">
+                      <span className="text-xs text-gray-400">티커</span>
+                      <span className="text-sm font-mono text-white">{form.ticker}</span>
+                      <button
+                        type="button"
+                        onClick={() => set('ticker', '')}
+                        className="ml-auto text-gray-500 hover:text-white text-xs"
+                      >✕</button>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={fetchingPrice}
+                      onClick={handleFetchPrice}
+                      className="px-3 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-xs rounded-lg transition whitespace-nowrap"
+                    >
+                      {fetchingPrice ? '조회 중...' : '가격 조회'}
+                    </button>
+                  </div>
                 )}
-                <p className="text-xs text-gray-600 mt-1">{TICKER_HINTS[form.category]}</p>
+                {priceError && (
+                  <p className="text-xs text-red-400">{priceError}</p>
+                )}
               </div>
             )}
 
@@ -178,7 +276,7 @@ function AssetModal({ initial, onSave, onClose, alphaVantageKey, exchangeRate })
                 min="0"
                 step="any"
                 className="input"
-                placeholder="티커 조회 또는 직접 입력"
+                placeholder="가격 조회 또는 직접 입력"
                 value={form.currentPrice}
                 onChange={(e) => set('currentPrice', e.target.value)}
               />
@@ -242,14 +340,12 @@ export default function Assets() {
     }
   }
 
-  // 티커가 있는 자산 현재가 일괄 갱신
   async function handleRefreshAllPrices() {
     const targets = assets.filter((a) => a.ticker)
     if (targets.length === 0) {
       alert('티커가 설정된 자산이 없습니다.')
       return
     }
-
     setRefreshing(true)
     setRefreshResult(null)
     let success = 0
@@ -257,14 +353,9 @@ export default function Assets() {
 
     for (const asset of targets) {
       try {
-        const price = await fetchAssetPrice(
-          asset,
-          settings.alphaVantageKey,
-          settings.exchangeRate
-        )
+        const price = await fetchAssetPrice(asset, settings.exchangeRate)
         await updateAsset(asset.id, { ...asset, currentPrice: price })
         success++
-        // API 레이트 리밋 방지
         await new Promise((r) => setTimeout(r, 1200))
       } catch {
         failed.push(asset.name)
@@ -305,7 +396,6 @@ export default function Assets() {
         </div>
       )}
 
-      {/* Category filter */}
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setFilter('all')}
@@ -354,48 +444,27 @@ export default function Assets() {
                   <tr key={asset.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2">
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: CATEGORIES[asset.category]?.color }}
-                        />
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[asset.category]?.color }} />
                         <div>
                           <p className="text-white font-medium">{asset.name}</p>
-                          {asset.ticker && (
-                            <p className="text-xs text-gray-500 font-mono">{asset.ticker}</p>
-                          )}
-                          {asset.memo && !asset.ticker && (
-                            <p className="text-xs text-gray-500">{asset.memo}</p>
-                          )}
+                          {asset.ticker && <p className="text-xs text-gray-500 font-mono">{asset.ticker}</p>}
+                          {asset.memo && !asset.ticker && <p className="text-xs text-gray-500">{asset.memo}</p>}
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-400">{CATEGORIES[asset.category]?.label}</td>
-                    <td className="px-4 py-3 text-right text-gray-300">
-                      {asset.quantity.toLocaleString()}
-                    </td>
+                    <td className="px-4 py-3 text-right text-gray-300">{asset.quantity.toLocaleString()}</td>
                     <td className="px-4 py-3 text-right text-gray-300">
                       {sym}{asset.currency === 'KRW' ? formatKRW(asset.currentPrice) : formatUSD(asset.currentPrice)}
                     </td>
-                    <td className="px-4 py-3 text-right text-white font-medium">
-                      ₩{formatKRW(currentVal)}
-                    </td>
+                    <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(currentVal)}</td>
                     <td className={`px-4 py-3 text-right font-medium ${profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {profitRate >= 0 ? '+' : ''}{profitRate.toFixed(2)}%
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => setModal(asset)}
-                          className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700"
-                        >
-                          수정
-                        </button>
-                        <button
-                          onClick={() => handleDelete(asset)}
-                          className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700"
-                        >
-                          삭제
-                        </button>
+                        <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
+                        <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
                       </div>
                     </td>
                   </tr>
@@ -411,7 +480,6 @@ export default function Assets() {
           initial={modal === 'add' ? null : modal}
           onSave={handleSave}
           onClose={() => setModal(null)}
-          alphaVantageKey={settings.alphaVantageKey}
           exchangeRate={settings.exchangeRate}
         />
       )}
