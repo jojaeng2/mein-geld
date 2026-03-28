@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -6,6 +6,7 @@ import {
 import { useAssets } from '../hooks/useAssets'
 import { useSettings } from '../hooks/useSettings'
 import { useSnapshots } from '../hooks/useSnapshots'
+import { useSells } from '../hooks/useSells'
 import { CATEGORIES } from '../lib/constants'
 import { formatKRW, toKRW, calcReturn } from '../lib/utils'
 
@@ -61,7 +62,9 @@ export default function Dashboard() {
   const { assets, loading: assetsLoading } = useAssets()
   const { settings, loading: settingsLoading } = useSettings()
   const { snapshots, loading: snapshotsLoading, saveSnapshot, deleteSnapshot } = useSnapshots()
+  const { sells } = useSells()
   const savedRef = useRef(false)
+  const [sellTab, setSellTab] = useState('all')
 
   const currentTotal = useMemo(() => {
     const rate = settings.exchangeRate
@@ -163,6 +166,26 @@ export default function Dashboard() {
       .sort((a, b) => a.dDays - b.dDays)
   }, [assets])
 
+  const DEDUCTION = 2_500_000 // 해외주식 양도소득세 기본공제 250만원
+  const currentYear = new Date().getFullYear().toString()
+
+  const filteredSells = useMemo(() => {
+    if (sellTab === 'domestic') return sells.filter((s) => s.currency === 'KRW')
+    if (sellTab === 'overseas') return sells.filter((s) => s.currency !== 'KRW')
+    return sells
+  }, [sells, sellTab])
+
+  const totalGainKRW = filteredSells.reduce((s, sell) => s + (sell.realizedGainKRW ?? 0), 0)
+
+  const overseasGainThisYear = useMemo(() =>
+    sells
+      .filter((s) => s.currency !== 'KRW' && s.sellDate?.startsWith(currentYear))
+      .reduce((s, sell) => s + (sell.realizedGainKRW ?? 0), 0)
+  , [sells, currentYear])
+
+  const taxableGain  = Math.max(0, overseasGainThisYear - DEDUCTION)
+  const estimatedTax = Math.round(taxableGain * 0.22)
+
   if (assetsLoading || settingsLoading) {
     return <div className="p-8 text-gray-400">로딩 중...</div>
   }
@@ -196,6 +219,93 @@ export default function Dashboard() {
           color={!stats ? 'text-white' : stats.profitRate >= 0 ? 'text-green-400' : 'text-red-400'}
         />
       </div>
+
+      {/* 실현 손익 */}
+      {sells.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-gray-400">실현 손익</h3>
+            <div className="flex gap-1">
+              {[['all', '전체'], ['domestic', '국내'], ['overseas', '해외']].map(([v, label]) => (
+                <button key={v} onClick={() => setSellTab(v)}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition ${sellTab === v ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-gray-500 mb-1">실현 손익 합계</p>
+              <p className={`text-2xl font-bold ${totalGainKRW >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {totalGainKRW >= 0 ? '+' : ''}₩{formatKRW(totalGainKRW)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">거래 횟수</p>
+              <p className="text-2xl font-bold text-white">{filteredSells.length}건</p>
+            </div>
+          </div>
+
+          {/* 해외주식 세금 추정 */}
+          {(sellTab === 'overseas' || sellTab === 'all') && overseasGainThisYear !== 0 && (
+            <div className="bg-gray-800 rounded-lg p-4 text-sm space-y-2 mb-4">
+              <p className="text-gray-400 font-medium text-xs mb-2">{currentYear}년 해외주식 양도소득세 추정</p>
+              <div className="space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">해외주식 실현 수익</span>
+                  <span className={overseasGainThisYear >= 0 ? 'text-white' : 'text-red-400'}>
+                    {overseasGainThisYear >= 0 ? '' : '-'}₩{formatKRW(Math.abs(overseasGainThisYear))}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">기본공제</span>
+                  <span className="text-gray-400">- ₩{formatKRW(DEDUCTION)}</span>
+                </div>
+                <div className="flex justify-between border-t border-gray-700 pt-1.5">
+                  <span className="text-gray-500">과세표준</span>
+                  <span className={taxableGain > 0 ? 'text-yellow-400' : 'text-gray-400'}>₩{formatKRW(taxableGain)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">예상 세금 (22%)</span>
+                  <span className={estimatedTax > 0 ? 'text-red-400 font-semibold' : 'text-gray-400'}>
+                    {estimatedTax > 0 ? `- ₩${formatKRW(estimatedTax)}` : '없음'}
+                  </span>
+                </div>
+                {estimatedTax > 0 && (
+                  <div className="flex justify-between border-t border-gray-700 pt-1.5">
+                    <span className="text-gray-400 font-medium">세후 실수령</span>
+                    <span className="text-green-400 font-semibold">₩{formatKRW(overseasGainThisYear - estimatedTax)}</span>
+                  </div>
+                )}
+              </div>
+              {taxableGain <= 0 && overseasGainThisYear > 0 && (
+                <p className="text-xs text-green-500 pt-1">기본공제(250만원) 이하 — 세금 없음</p>
+              )}
+            </div>
+          )}
+
+          {/* 최근 매도 목록 */}
+          <div className="space-y-0">
+            {filteredSells.slice(0, 5).map((sell) => (
+              <div key={sell.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+                <div>
+                  <span className="text-sm text-white">{sell.name}</span>
+                  {sell.ticker && <span className="ml-1.5 text-xs text-gray-500 font-mono">{sell.ticker}</span>}
+                  <span className="ml-2 text-xs text-gray-600">{sell.sellDate}</span>
+                </div>
+                <span className={`text-sm font-medium ${sell.realizedGainKRW >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {sell.realizedGainKRW >= 0 ? '+' : ''}₩{formatKRW(sell.realizedGainKRW)}
+                </span>
+              </div>
+            ))}
+            {filteredSells.length > 5 && (
+              <p className="text-xs text-gray-600 text-center pt-2">+{filteredSells.length - 5}건 더 (자산 페이지에서 전체 확인)</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {assets.length === 0 ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
