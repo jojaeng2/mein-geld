@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, useState } from 'react'
+import { useMemo, useEffect, useRef, useState, useCallback } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -194,50 +194,69 @@ export default function Dashboard() {
   const taxableGain  = Math.max(0, overseasGainThisYear - DEDUCTION)
   const estimatedTax = Math.round(taxableGain * 0.22)
 
-  // 예상 배당금: 티커별로 묶어서 매수/매도 시점 반영한 월별 실보유량으로 계산
-  const dividendByMonth = useMemo(() => {
+  // 특정 연도의 월별 배당금 계산 (매수/매도 시점 반영)
+  const calcDividendForYear = useCallback((year, tickerMap) => {
     const rate = settings.exchangeRate
-    const year = new Date().getFullYear()
     const monthly = Array(12).fill(0)
-
-    // 티커별 그룹화
-    const map = new Map()
-    for (const asset of assets) {
-      if (!asset.ticker) continue
-      if (!map.has(asset.ticker)) map.set(asset.ticker, [])
-      map.get(asset.ticker).push(asset)
-    }
-
-    for (const [ticker, records] of map) {
+    for (const [ticker, records] of tickerMap) {
       const rep = records.find((r) => r.divPerShare > 0) ?? records[0]
       if (!rep.divPerShare || !rep.divMonths?.length) continue
-
-      // 해당 티커의 매도 기록 (올해)
-      const tickerSells = sells.filter((s) => s.ticker === ticker && s.sellDate?.startsWith(String(year)))
-
+      const tickerSells = sells.filter((s) => s.ticker === ticker)
       for (const m of rep.divMonths) {
-        // 배당 지급 월의 첫째 날 기준으로 보유량 계산
         const cutoff = `${year}-${String(m).padStart(2, '0')}-01`
-
-        // 해당 월 이전에 매수한 수량 합산
+        // 현재 남은 레코드 중 해당 월 이전 매수분
         const boughtQty = records.reduce((s, r) => {
           const pd = r.purchaseDate ?? (r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toISOString().slice(0, 10) : '1970-01-01')
           return pd < cutoff ? s + (r.quantity ?? 0) : s
         }, 0)
-
-        // 해당 월 이전에 매도한 수량 차감
-        const soldQty = tickerSells.reduce((s, sell) => {
-          return sell.sellDate < cutoff ? s + (sell.quantity ?? 0) : s
-        }, 0)
-
-        const netQty = Math.max(0, boughtQty - soldQty)
+        // T 이후 매도된 수량은 T 시점에 보유했던 것 (FIFO)
+        const soldAfterQty = tickerSells.reduce((s, sell) => sell.sellDate >= cutoff ? s + (sell.quantity ?? 0) : s, 0)
+        // T 이전 매도된 수량은 이미 차감됨
+        const soldBeforeQty = tickerSells.reduce((s, sell) => sell.sellDate < cutoff ? s + (sell.quantity ?? 0) : s, 0)
+        const netQty = Math.max(0, boughtQty + soldAfterQty - soldBeforeQty)
         if (netQty === 0) continue
-
         monthly[m - 1] += toKRW(rep.divPerShare, netQty, rep.currency, rate)
       }
     }
     return monthly
   }, [assets, sells, settings.exchangeRate])
+
+  const { dividendByMonth, historicalDividends } = useMemo(() => {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+
+    // 티커별 그룹화
+    const tickerMap = new Map()
+    for (const asset of assets) {
+      if (!asset.ticker) continue
+      if (!tickerMap.has(asset.ticker)) tickerMap.set(asset.ticker, [])
+      tickerMap.get(asset.ticker).push(asset)
+    }
+
+    // 올해 월별 예상 배당금
+    const thisYearMonthly = calcDividendForYear(currentYear, tickerMap)
+
+    // 과거 연도 범위: 가장 이른 purchaseDate 기준
+    const allDates = [
+      ...Array.from(tickerMap.values()).flat().map((r) =>
+        r.purchaseDate ?? (r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000).toISOString().slice(0, 10) : null)
+      ),
+      ...sells.map((s) => s.sellDate),
+    ].filter(Boolean)
+
+    const earliestYear = allDates.length > 0
+      ? Math.min(...allDates.map((d) => parseInt(d.slice(0, 4))))
+      : currentYear
+
+    // 과거 각 연도별 배당 합계
+    const historical = []
+    for (let y = earliestYear; y <= currentYear; y++) {
+      const monthly = y === currentYear ? thisYearMonthly : calcDividendForYear(y, tickerMap)
+      historical.push({ year: y, total: monthly.reduce((s, v) => s + v, 0), monthly })
+    }
+
+    return { dividendByMonth: thisYearMonthly, historicalDividends: historical }
+  }, [assets, sells, settings.exchangeRate, calcDividendForYear])
 
   const annualDividend = dividendByMonth.reduce((s, v) => s + v, 0)
   const now = new Date()
@@ -284,7 +303,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-medium text-gray-400">예상 배당금</h3>
           <div className="flex gap-1">
-            {[['month', '이번달'], ['quarter', '이번분기'], ['year', '올해']].map(([v, label]) => (
+            {[['month', '이번달'], ['quarter', '이번분기'], ['year', '올해'], ['all', '전체']].map(([v, label]) => (
               <button key={v} onClick={() => setDivPeriod(v)}
                 className={`px-2.5 py-1 rounded text-xs font-medium transition ${divPeriod === v ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
                 {label}
@@ -310,37 +329,76 @@ export default function Dashboard() {
                 <p className="text-lg font-bold text-yellow-400">₩{formatKRW(Math.round(annualDividend))}</p>
               </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-2">월별 예상 배당금</p>
-              <div className="grid grid-cols-6 gap-1.5">
-                {dividendByMonth.map((amt, i) => {
-                  const month = i + 1
-                  const isThisMonth = thisMonth === i
-                  const isHighlighted = divPeriod === 'month' ? isThisMonth
-                    : divPeriod === 'quarter' ? thisQuarterMonths.includes(i)
-                    : true
-                  const max = Math.max(...dividendByMonth, 1)
-                  const pct = (amt / max) * 100
-                  return (
-                    <div key={month} className={`rounded-lg p-2 text-center transition-colors ${isThisMonth ? 'bg-yellow-900/30 border border-yellow-700/50' : isHighlighted ? 'bg-gray-800' : 'bg-gray-800/40'}`}>
-                      <p className={`text-xs mb-1 ${isHighlighted ? 'text-gray-400' : 'text-gray-600'}`}>{month}월</p>
-                      {amt > 0 ? (
-                        <>
-                          <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
-                            <div className={`h-1 rounded-full ${isHighlighted ? 'bg-yellow-500' : 'bg-gray-600'}`} style={{ width: `${pct}%` }} />
-                          </div>
-                          <p className={`text-xs font-medium ${isHighlighted ? 'text-yellow-400' : 'text-gray-600'}`}>
-                            {amt >= 10000 ? `${Math.round(amt / 10000)}만` : formatKRW(Math.round(amt))}
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-gray-700">-</p>
-                      )}
-                    </div>
-                  )
-                })}
+            {divPeriod !== 'all' && (
+              <div>
+                <p className="text-xs text-gray-500 mb-2">월별 예상 배당금</p>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {dividendByMonth.map((amt, i) => {
+                    const month = i + 1
+                    const isThisMonth = thisMonth === i
+                    const isHighlighted = divPeriod === 'month' ? isThisMonth
+                      : divPeriod === 'quarter' ? thisQuarterMonths.includes(i)
+                      : true
+                    const max = Math.max(...dividendByMonth, 1)
+                    const pct = (amt / max) * 100
+                    return (
+                      <div key={month} className={`rounded-lg p-2 text-center transition-colors ${isThisMonth ? 'bg-yellow-900/30 border border-yellow-700/50' : isHighlighted ? 'bg-gray-800' : 'bg-gray-800/40'}`}>
+                        <p className={`text-xs mb-1 ${isHighlighted ? 'text-gray-400' : 'text-gray-600'}`}>{month}월</p>
+                        {amt > 0 ? (
+                          <>
+                            <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
+                              <div className={`h-1 rounded-full ${isHighlighted ? 'bg-yellow-500' : 'bg-gray-600'}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <p className={`text-xs font-medium ${isHighlighted ? 'text-yellow-400' : 'text-gray-600'}`}>
+                              {amt >= 10000 ? `${Math.round(amt / 10000)}만` : formatKRW(Math.round(amt))}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-gray-700">-</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
+            )}
+
+            {divPeriod === 'all' && (
+              <div>
+                <p className="text-xs text-gray-500 mb-3">연도별 배당 이력 (매수/매도 시점 기반 추정)</p>
+                <div className="space-y-2">
+                  {historicalDividends.map(({ year, total, monthly }) => {
+                    const maxTotal = Math.max(...historicalDividends.map((h) => h.total), 1)
+                    const pct = (total / maxTotal) * 100
+                    const isCurrent = year === now.getFullYear()
+                    return (
+                      <div key={year} className={`rounded-lg p-3 ${isCurrent ? 'bg-yellow-900/20 border border-yellow-700/40' : 'bg-gray-800'}`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className={`text-sm font-medium ${isCurrent ? 'text-yellow-300' : 'text-gray-300'}`}>
+                            {year}년{isCurrent ? ' (예상)' : ''}
+                          </span>
+                          <span className={`text-sm font-bold ${total > 0 ? 'text-yellow-400' : 'text-gray-600'}`}>
+                            {total > 0 ? `₩${formatKRW(Math.round(total))}` : '-'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-700 rounded-full h-1.5">
+                          <div className="bg-yellow-500 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                        {total > 0 && (
+                          <div className="flex gap-1 mt-2 flex-wrap">
+                            {monthly.map((amt, i) => amt > 0 && (
+                              <span key={i} className="text-xs text-gray-500 bg-gray-700/50 rounded px-1.5 py-0.5">
+                                {i + 1}월 {amt >= 10000 ? `${Math.round(amt / 10000)}만` : formatKRW(Math.round(amt))}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
