@@ -81,7 +81,12 @@ function TickerSearch({ category, onSelect }) {
             <div className="px-4 py-3 text-xs text-gray-400">검색 중...</div>
           )}
           {!searching && results.length === 0 && query && (
-            <div className="px-4 py-3 text-xs text-gray-500">검색 결과 없음</div>
+            <div className="px-4 py-3 text-xs text-gray-500">
+              검색 결과 없음 —{' '}
+              {category === 'crypto'
+                ? 'CoinGecko ID를 직접 입력해보세요 (예: bitcoin)'
+                : '티커를 직접 입력하세요 (국내: 종목코드.KS, 미국: AAPL)'}
+            </div>
           )}
           {results.map((item, i) => (
             <button
@@ -112,7 +117,7 @@ function TickerSearch({ category, onSelect }) {
   )
 }
 
-function AssetModal({ initial, onSave, onClose, exchangeRate }) {
+function AssetModal({ initial, onSave, onClose }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [fetchingPrice, setFetchingPrice] = useState(false)
@@ -141,8 +146,7 @@ function AssetModal({ initial, onSave, onClose, exchangeRate }) {
     setFetchingPrice(true)
     try {
       const price = await fetchAssetPrice(
-        { ticker: form.ticker, category: form.category, currency: form.currency },
-        exchangeRate
+        { ticker: form.ticker, category: form.category, currency: form.currency }
       )
       set('currentPrice', String(price))
     } catch (e) {
@@ -357,7 +361,7 @@ export default function Assets() {
 
     for (const asset of targets) {
       try {
-        const price = await fetchAssetPrice(asset, settings.exchangeRate)
+        const price = await fetchAssetPrice(asset)
         await updateAsset(asset.id, { ...asset, currentPrice: price })
         success++
         await new Promise((r) => setTimeout(r, 1200))
@@ -484,7 +488,6 @@ export default function Assets() {
           initial={modal === 'add' ? null : modal}
           onSave={handleSave}
           onClose={() => setModal(null)}
-          exchangeRate={settings.exchangeRate}
         />
       )}
     </div>

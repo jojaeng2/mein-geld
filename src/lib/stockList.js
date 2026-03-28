@@ -1,3 +1,34 @@
+// 주요 국내 ETF
+export const KR_ETFS = [
+  // TIGER
+  { symbol: '133690.KS', name: 'TIGER 나스닥100', market: 'ETF' },
+  { symbol: '396500.KS', name: 'TIGER 나스닥500', market: 'ETF' },
+  { symbol: '360750.KS', name: 'TIGER 미국S&P500', market: 'ETF' },
+  { symbol: '381170.KS', name: 'TIGER 미국테크TOP10', market: 'ETF' },
+  { symbol: '448290.KS', name: 'TIGER 미국배당다우존스', market: 'ETF' },
+  { symbol: '114800.KS', name: 'TIGER 인버스', market: 'ETF' },
+  { symbol: '122630.KS', name: 'TIGER 레버리지', market: 'ETF' },
+  { symbol: '102110.KS', name: 'TIGER 200', market: 'ETF' },
+  { symbol: '168580.KS', name: 'TIGER 차이나CSI300', market: 'ETF' },
+  { symbol: '251350.KS', name: 'TIGER 코스닥150', market: 'ETF' },
+  // KODEX
+  { symbol: '069500.KS', name: 'KODEX 200', market: 'ETF' },
+  { symbol: '379800.KS', name: 'KODEX 미국나스닥100', market: 'ETF' },
+  { symbol: '385510.KS', name: 'KODEX 미국S&P500', market: 'ETF' },
+  { symbol: '229200.KS', name: 'KODEX 코스닥150', market: 'ETF' },
+  { symbol: '233740.KS', name: 'KODEX 코스닥150레버리지', market: 'ETF' },
+  { symbol: '261240.KS', name: 'KODEX 미국달러선물', market: 'ETF' },
+  { symbol: '132030.KS', name: 'KODEX 골드선물', market: 'ETF' },
+  { symbol: '305080.KS', name: 'KODEX 미국채울트라30년선물', market: 'ETF' },
+  // ACE (한국투자)
+  { symbol: '360200.KS', name: 'ACE 미국S&P500', market: 'ETF' },
+  { symbol: '448300.KS', name: 'ACE 미국배당다우존스', market: 'ETF' },
+  // KINDEX
+  { symbol: '195930.KS', name: 'KINDEX 미국S&P500', market: 'ETF' },
+  // SOL
+  { symbol: '446720.KS', name: 'SOL 미국배당다우존스', market: 'ETF' },
+]
+
 // 주요 국내 주식 (KOSPI / KOSDAQ)
 export const KR_STOCKS = [
   { symbol: '005930.KS', name: '삼성전자', market: 'KOSPI' },
@@ -88,7 +119,7 @@ export const US_STOCKS = [
   { symbol: 'TLT', name: 'iShares 20+ Year Treasury', market: 'ETF' },
 ]
 
-export const ALL_STOCKS = [...KR_STOCKS, ...US_STOCKS]
+export const ALL_STOCKS = [...KR_ETFS, ...KR_STOCKS, ...US_STOCKS]
 
 /**
  * 종목명 또는 티커로 로컬 검색
