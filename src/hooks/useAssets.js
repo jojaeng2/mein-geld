@@ -1,50 +1,39 @@
 import { useEffect, useState } from 'react'
 import {
-  collection,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  serverTimestamp,
-  query,
-  orderBy,
+  collection, onSnapshot, addDoc, updateDoc,
+  deleteDoc, doc, serverTimestamp, query, orderBy,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-
-const COLLECTION = 'assets'
+import { useAuth } from '../contexts/AuthContext'
 
 export function useAssets() {
-  const [assets, setAssets] = useState([])
+  const { user } = useAuth()
+  const [assets, setAssets]   = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const q = query(collection(db, COLLECTION), orderBy('createdAt', 'desc'))
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-      setAssets(data)
+    if (!user) return
+    const col = collection(db, 'users', user.uid, 'assets')
+    const q   = query(col, orderBy('createdAt', 'desc'))
+    const unsub = onSnapshot(q, (snap) => {
+      setAssets(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
       setLoading(false)
     })
-    return unsubscribe
-  }, [])
+    return unsub
+  }, [user])
+
+  function col() { return collection(db, 'users', user.uid, 'assets') }
 
   async function addAsset(asset) {
-    await addDoc(collection(db, COLLECTION), {
-      ...asset,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    })
+    await addDoc(col(), { ...asset, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
   }
 
   async function updateAsset(id, asset) {
-    await updateDoc(doc(db, COLLECTION, id), {
-      ...asset,
-      updatedAt: serverTimestamp(),
-    })
+    await updateDoc(doc(db, 'users', user.uid, 'assets', id), { ...asset, updatedAt: serverTimestamp() })
   }
 
   async function deleteAsset(id) {
-    await deleteDoc(doc(db, COLLECTION, id))
+    await deleteDoc(doc(db, 'users', user.uid, 'assets', id))
   }
 
   return { assets, loading, addAsset, updateAsset, deleteAsset }

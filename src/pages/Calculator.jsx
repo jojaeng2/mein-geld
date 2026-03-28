@@ -1,19 +1,16 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts'
 import { useAssets } from '../hooks/useAssets'
 import { useSettings } from '../hooks/useSettings'
+import { useCalculatorSettings } from '../hooks/useCalculatorSettings'
 import { CATEGORIES } from '../lib/constants'
 import { formatKRW, toKRW } from '../lib/utils'
 
 const DEFAULT_CAPITAL  = { stock: 8, crypto: 20, cash: 3, real_estate: 3, pension: 5, other: 5 }
 const DEFAULT_DIVIDEND = { stock: 2, crypto: 0,  cash: 0, real_estate: 4, pension: 1, other: 0 }
-
-const RATES_KEY    = 'mg_calc_rates'
-const DIV_KEY      = 'mg_calc_dividends'
-const REINVEST_KEY = 'mg_calc_reinvest'
 
 function formatYAxis(v) {
   if (v >= 1e12) return `${(v / 1e12).toFixed(1)}조`
@@ -82,36 +79,15 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 export default function Calculator() {
-  const { assets, loading } = useAssets()
-  const { settings } = useSettings()
+  const { assets, loading: assetsLoading } = useAssets()
+  const { settings: appSettings }          = useSettings()
+  const { settings, loading: calcLoading, saving, update } = useCalculatorSettings()
 
-  const [years, setYears]           = useState(10)
-  const [monthlyAdd, setMonthlyAdd] = useState('')
-  const [reinvest, setReinvest]     = useState(() => localStorage.getItem(REINVEST_KEY) !== 'false')
-  const [capitalRates, setCapitalRates] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(RATES_KEY) || '{}') } catch { return {} }
-  })
-  const [divRates, setDivRates] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(DIV_KEY) || '{}') } catch { return {} }
-  })
-
-  function setCapital(key, v) {
-    const next = { ...capitalRates, [key]: v }
-    setCapitalRates(next)
-    localStorage.setItem(RATES_KEY, JSON.stringify(next))
-  }
-  function setDiv(key, v) {
-    const next = { ...divRates, [key]: v }
-    setDivRates(next)
-    localStorage.setItem(DIV_KEY, JSON.stringify(next))
-  }
-  function toggleReinvest(v) {
-    setReinvest(v)
-    localStorage.setItem(REINVEST_KEY, String(v))
-  }
+  const { years, monthlyAdd, reinvest, capitalRates, divRates } = settings
+  const monthlyNum = Number(monthlyAdd) || 0
 
   const groups = useMemo(() => {
-    const exRate = settings.exchangeRate
+    const exRate = appSettings.exchangeRate
     const map = new Map()
     for (const asset of assets) {
       const key = asset.ticker || `__${asset.id}`
@@ -136,12 +112,10 @@ export default function Calculator() {
       })
       .filter((g) => g.currentValue > 0)
       .sort((a, b) => b.currentValue - a.currentValue)
-  }, [assets, settings.exchangeRate, capitalRates, divRates])
+  }, [assets, appSettings.exchangeRate, capitalRates, divRates])
 
   const totalCurrent = groups.reduce((s, g) => s + g.currentValue, 0)
-  const monthlyNum   = Number(monthlyAdd) || 0
 
-  // 포트폴리오 가중평균 실효 수익률
   const weightedRate = useMemo(() => {
     if (totalCurrent === 0) return 0
     return groups.reduce((s, g) => {
@@ -150,7 +124,6 @@ export default function Calculator() {
     }, 0)
   }, [groups, totalCurrent, reinvest])
 
-  // 종목별 복리 (추가납입 없이 현재 보유분만)
   function projectHolding(g, n) {
     const effective = g.capitalRate + (reinvest ? g.divRate : 0)
     const r = effective / 100 / 12
@@ -158,7 +131,6 @@ export default function Calculator() {
     return g.currentValue * (1 + r) ** n
   }
 
-  // 월 추가납입 → 가중평균 수익률로 별도 복리
   function projectMonthly(n) {
     if (monthlyNum === 0) return 0
     const r = weightedRate / 100 / 12
@@ -166,7 +138,6 @@ export default function Calculator() {
     return monthlyNum * ((1 + r) ** n - 1) / r
   }
 
-  // 배당금 (현금 기준 환산, 자본 성장분 기반)
   function annualDividend(g, year) {
     const r = g.capitalRate / 100 / 12
     const n = year * 12
@@ -174,7 +145,6 @@ export default function Calculator() {
     return capitalValue * (g.divRate / 100)
   }
 
-  // 연도별 차트 데이터
   const chartData = useMemo(() => {
     return Array.from({ length: years + 1 }, (_, year) => {
       const n = year * 12
@@ -185,19 +155,17 @@ export default function Calculator() {
         divTotal     += annualDividend(g, year)
       }
       const addedTotal = projectMonthly(n)
-      const principal  = totalCurrent + monthlyNum * 12 * year
       return {
         year:       `${year}년`,
         보유분:     Math.round(holdingTotal),
         추가납입분: Math.round(addedTotal),
         예상금액:   Math.round(holdingTotal + addedTotal),
-        원금:       Math.round(principal),
+        원금:       Math.round(totalCurrent + monthlyNum * 12 * year),
         연간배당금: Math.round(divTotal),
       }
     })
   }, [groups, years, monthlyNum, totalCurrent, reinvest, weightedRate])
 
-  // 종목별 최종 예상 (보유분만)
   const assetProjection = useMemo(() => {
     const n = years * 12
     return groups.map((g) => ({
@@ -226,7 +194,8 @@ export default function Calculator() {
       monthly: Math.round((chartData[y]?.연간배당금 ?? 0) / 12),
     }))
 
-  if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
+  if (assetsLoading || calcLoading) return <div className="p-8 text-gray-400">로딩 중...</div>
+
   if (assets.length === 0) {
     return (
       <div className="p-8">
@@ -240,7 +209,10 @@ export default function Calculator() {
 
   return (
     <div className="p-8 space-y-6">
-      <h2 className="text-xl font-bold text-white">복리 계산기</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-white">복리 계산기</h2>
+        {saving && <span className="text-xs text-gray-500">저장 중...</span>}
+      </div>
 
       {/* 설정 바 */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-wrap gap-8 items-end">
@@ -249,7 +221,7 @@ export default function Calculator() {
           <div className="flex items-center gap-3 mt-1">
             <input
               type="range" min="1" max="30" value={years}
-              onChange={(e) => setYears(Number(e.target.value))}
+              onChange={(e) => update({ years: Number(e.target.value) })}
               className="w-40 accent-brand-500"
             />
             <span className="text-white font-bold text-lg w-14">{years}년</span>
@@ -262,8 +234,8 @@ export default function Calculator() {
             type="number" min="0" step="10000"
             className="input w-44"
             placeholder="0"
-            value={monthlyAdd}
-            onChange={(e) => setMonthlyAdd(e.target.value)}
+            value={monthlyAdd || ''}
+            onChange={(e) => update({ monthlyAdd: Number(e.target.value) || 0 })}
           />
           {monthlyNum > 0 && (
             <p className="text-xs text-gray-500 mt-1">
@@ -276,13 +248,13 @@ export default function Calculator() {
           <label className="label">배당금 처리</label>
           <div className="flex rounded-lg overflow-hidden border border-gray-700 mt-1">
             <button
-              onClick={() => toggleReinvest(true)}
+              onClick={() => update({ reinvest: true })}
               className={`px-4 py-2 text-sm font-medium transition ${reinvest ? 'bg-brand-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
             >
               재투자 (DRIP)
             </button>
             <button
-              onClick={() => toggleReinvest(false)}
+              onClick={() => update({ reinvest: false })}
               className={`px-4 py-2 text-sm font-medium transition ${!reinvest ? 'bg-yellow-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'}`}
             >
               현금 수령
@@ -291,11 +263,11 @@ export default function Calculator() {
         </div>
       </div>
 
-      {/* 종목별 수익률 설정 */}
+      {/* 종목별 수익률 */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
           <h3 className="text-sm font-medium text-gray-400">종목별 수익률 설정</h3>
-          <p className="text-xs text-gray-600">카테고리 기본값 자동 적용 · {years}년 후 예상은 현재 보유분 기준</p>
+          <p className="text-xs text-gray-600">{years}년 후 예상은 현재 보유분 기준 · 설정은 자동 저장됩니다</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -335,10 +307,18 @@ export default function Calculator() {
                         <span className="text-xs text-gray-500 w-10 text-right">{weight.toFixed(1)}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3"><RateInput value={g.capitalRate} onChange={(v) => setCapital(g.key, v)} /></td>
+                    <td className="px-4 py-3">
+                      <RateInput
+                        value={g.capitalRate}
+                        onChange={(v) => update({ capitalRates: { ...capitalRates, [g.key]: v } })}
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="space-y-0.5">
-                        <RateInput value={g.divRate} onChange={(v) => setDiv(g.key, v)} />
+                        <RateInput
+                          value={g.divRate}
+                          onChange={(v) => update({ divRates: { ...divRates, [g.key]: v } })}
+                        />
                         {g.divRate > 0 && (
                           <p className="text-xs text-yellow-500 text-right">
                             현재 연 ₩{formatKRW(Math.round(g.currentValue * g.divRate / 100))}
@@ -412,9 +392,7 @@ export default function Calculator() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h3 className="text-sm font-medium text-gray-400 mb-1">포트폴리오 성장 예측</h3>
         {monthlyNum > 0 && (
-          <p className="text-xs text-gray-600 mb-4">
-            실선 = 보유분 성장 + 추가납입분 합계 · 점선 = 투입 원금
-          </p>
+          <p className="text-xs text-gray-600 mb-4">파란 영역 = 보유분 성장 · 보라 영역 = 추가납입분 · 점선 = 투입 원금</p>
         )}
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
@@ -433,11 +411,8 @@ export default function Calculator() {
             <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={formatYAxis} width={52} />
             <Tooltip content={<ChartTooltip />} />
             <Legend formatter={(v) => <span className="text-xs text-gray-300">{v}</span>} />
-            {/* 원금 점선 */}
             <Area type="monotone" dataKey="원금" stroke="#374151" strokeWidth={1.5} strokeDasharray="5 3" fill="none" dot={false} />
-            {/* 보유분 */}
             <Area type="monotone" dataKey="보유분" stroke="#0ea5e9" strokeWidth={2} fill="url(#gradHolding)" dot={false} activeDot={{ r: 4 }} stackId="a" />
-            {/* 추가납입분 (있을 때만 의미 있음) */}
             {monthlyNum > 0 && (
               <Area type="monotone" dataKey="추가납입분" stroke="#a855f7" strokeWidth={2} fill="url(#gradAdded)" dot={false} activeDot={{ r: 4 }} stackId="a" />
             )}
@@ -445,7 +420,7 @@ export default function Calculator() {
         </ResponsiveContainer>
       </div>
 
-      {/* 배당금 이정표 */}
+      {/* 배당 이정표 */}
       {finalDiv > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
