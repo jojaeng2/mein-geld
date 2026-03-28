@@ -74,10 +74,14 @@ function TickerSearch({ category, onSelect }) {
         <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden">
           {searching && <div className="px-4 py-3 text-xs text-gray-400">검색 중...</div>}
           {!searching && results.length === 0 && query && (
-            <div className="px-4 py-3 text-xs text-gray-500">
-              검색 결과 없음 —{' '}
-              {category === 'crypto' ? 'CoinGecko ID를 직접 입력 (예: bitcoin)' : '티커 직접 입력 (예: 005930.KS, AAPL)'}
-            </div>
+            <button
+              type="button"
+              onClick={() => handleSelect({ symbol: query.trim(), name: query.trim() })}
+              className="w-full text-left px-4 py-2.5 hover:bg-gray-700 transition"
+            >
+              <span className="text-xs text-gray-400">직접 입력: </span>
+              <span className="text-sm font-mono text-white">{query.trim()}</span>
+            </button>
           )}
           {results.map((item, i) => (
             <button key={i} type="button" onClick={() => handleSelect(item)}

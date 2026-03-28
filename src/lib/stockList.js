@@ -23,6 +23,7 @@ export const KR_ETFS = [
   // ACE (한국투자)
   { symbol: '360200.KS', name: 'ACE 미국S&P500', market: 'ETF' },
   { symbol: '448300.KS', name: 'ACE 미국배당다우존스', market: 'ETF' },
+  { symbol: '411060.KS', name: 'ACE KRX금현물', market: 'ETF' },
   // KINDEX
   { symbol: '195930.KS', name: 'KINDEX 미국S&P500', market: 'ETF' },
   // SOL
@@ -106,6 +107,14 @@ export const US_STOCKS = [
   { symbol: 'XOM', name: 'ExxonMobil', market: 'NYSE' },
   { symbol: 'COST', name: 'Costco', market: 'NASDAQ' },
   { symbol: 'DIS', name: 'Disney', market: 'NYSE' },
+  { symbol: 'PLTR', name: 'Palantir', market: 'NYSE' },
+  { symbol: 'COIN', name: 'Coinbase', market: 'NASDAQ' },
+  { symbol: 'HOOD', name: 'Robinhood', market: 'NASDAQ' },
+  { symbol: 'SOFI', name: 'SoFi Technologies', market: 'NASDAQ' },
+  { symbol: 'RKLB', name: 'Rocket Lab', market: 'NASDAQ' },
+  { symbol: 'IONQ', name: 'IonQ', market: 'NYSE' },
+  { symbol: 'SOUN', name: 'SoundHound AI', market: 'NASDAQ' },
+  { symbol: 'SMCI', name: 'Super Micro Computer', market: 'NASDAQ' },
   // ETF
   { symbol: 'SPY', name: 'SPDR S&P 500 ETF', market: 'ETF' },
   { symbol: 'QQQ', name: 'Invesco QQQ (NASDAQ 100)', market: 'ETF' },
