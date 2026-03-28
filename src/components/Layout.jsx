@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useAutoRefresh } from '../hooks/useAutoRefresh'
 
 const navItems = [
   { to: '/', label: '대시보드', icon: '▦' },
@@ -8,9 +10,47 @@ const navItems = [
   { to: '/settings', label: '설정', icon: '⚙' },
 ]
 
+function RefreshBanner({ status }) {
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (status === 'refreshing') {
+      setVisible(true)
+    } else if (status === 'done') {
+      // 2초 후 사라짐
+      const t = setTimeout(() => setVisible(false), 2000)
+      return () => clearTimeout(t)
+    }
+  }, [status])
+
+  if (!visible) return null
+
+  return (
+    <div className={`flex items-center gap-2 px-4 py-2 text-xs transition-all duration-300
+      ${status === 'done'
+        ? 'bg-green-950 border-b border-green-900 text-green-400'
+        : 'bg-gray-800 border-b border-gray-700 text-gray-400'
+      }`}
+    >
+      {status === 'refreshing' ? (
+        <>
+          <span className="animate-spin inline-block w-3 h-3 border border-gray-500 border-t-gray-300 rounded-full" />
+          현재가 자동 갱신 중...
+        </>
+      ) : (
+        <>
+          <span>✓</span>
+          현재가 갱신 완료
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function Layout({ children }) {
   const { logout, user } = useAuth()
   const navigate = useNavigate()
+  const refreshStatus = useAutoRefresh()
 
   async function handleLogout() {
     await logout()
@@ -63,8 +103,11 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        {children}
+      <main className="flex-1 overflow-auto flex flex-col">
+        <RefreshBanner status={refreshStatus} />
+        <div className="flex-1">
+          {children}
+        </div>
       </main>
     </div>
   )
