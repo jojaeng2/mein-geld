@@ -18,9 +18,8 @@ async function fetchStockPrice(symbol) {
   const res = await fetch(`${PROXY_URL}?code=${code}`)
   if (!res.ok) throw new Error('가격 조회 실패')
   const data = await res.json()
-  const priceStr = data?.closePrice
-  if (!priceStr) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
-  return parseFloat(priceStr.replace(/,/g, ''))
+  if (!data?.price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
+  return data.price
 }
 
 // 자산 카테고리·티커에 따라 적절한 API 호출 → 현재 단가 반환
