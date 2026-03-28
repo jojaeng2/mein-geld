@@ -601,14 +601,16 @@ function GroupRows({ row, settings, expanded, toggleExpand, setModal, setDivModa
   const { setNodeRef, attributes, listeners, transform, transition } = useSortable({ id: groupKey })
 
   const rate      = settings.exchangeRate
-  const isDeposit = category === 'cash'
-  const isRE      = category === 'real_estate'
+  const isDeposit  = category === 'cash'
+  const isRE       = category === 'real_estate'
+  const isOther    = !isInvestment && !isDeposit && !isRE
   const totalVal  = isInvestment
     ? toKRW(currentPrice, totalQty, currency, rate)
     : toKRW(records[0].currentPrice, records[0].quantity ?? 1, records[0].currency, rate)
   const profitRate = isInvestment
     ? calcReturn(avgPurchasePrice, currentPrice)
     : calcReturn(records[0].purchasePrice, records[0].currentPrice)
+  const showProfitRate = !isRE && !(isOther && !records[0].purchasePrice)
   const sym        = CURRENCIES[currency]?.symbol
   const expandKey  = ticker || records[0].id
   const isExpanded = expanded.has(expandKey)
@@ -653,8 +655,8 @@ function GroupRows({ row, settings, expanded, toggleExpand, setModal, setDivModa
           )}
         </td>
         <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(totalVal)}</td>
-        <td className={`px-4 py-3 text-right font-medium ${isRE ? 'text-gray-500' : profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {isRE ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%`}
+        <td className={`px-4 py-3 text-right font-medium ${!showProfitRate ? 'text-gray-500' : profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {!showProfitRate ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%`}
           {isDeposit && records[0].interestRate > 0 && (
             <p className="text-xs text-gray-500 font-normal">연 {records[0].interestRate}%</p>
           )}

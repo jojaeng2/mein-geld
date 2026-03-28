@@ -101,7 +101,9 @@ export default function Dashboard() {
 
     for (const asset of assets) {
       const current = toKRW(asset.currentPrice, asset.quantity, asset.currency, rate)
-      const purchase = toKRW(asset.purchasePrice, asset.quantity, asset.currency, rate)
+      // purchasePrice 없으면 currentPrice로 대체 (수익률 계산에서 0으로 왜곡 방지)
+      const effectivePurchase = asset.purchasePrice || asset.currentPrice
+      const purchase = toKRW(effectivePurchase, asset.quantity, asset.currency, rate)
       totalCurrent += current
       totalPurchase += purchase
       if (!byCategory[asset.category]) byCategory[asset.category] = 0
