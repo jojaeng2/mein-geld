@@ -230,11 +230,23 @@ function AssetModal({ initial, onSave, onClose }) {
 
   function set(field, value) { setForm((f) => ({ ...f, [field]: value })) }
 
-  function handleTickerSelect(item) {
-    set('ticker', item.symbol)
-    set('name', item.name)
+  async function handleTickerSelect(item) {
     const isKorean = item.symbol.endsWith('.KS') || item.symbol.endsWith('.KQ')
-    set('currency', isKorean ? 'KRW' : 'USD')
+    const currency = isKorean ? 'KRW' : 'USD'
+    setForm((f) => ({ ...f, ticker: item.symbol, name: item.name, currency }))
+    // 티커가 확정됐으므로 바로 가격 조회
+    if (item.symbol) {
+      setPriceError('')
+      setFetchingPrice(true)
+      try {
+        const price = await fetchAssetPrice({ ticker: item.symbol, category: form.category, currency })
+        set('currentPrice', String(price))
+      } catch (e) {
+        setPriceError(e.message || '가격 조회 실패')
+      } finally {
+        setFetchingPrice(false)
+      }
+    }
   }
 
   async function handleFetchPrice() {
