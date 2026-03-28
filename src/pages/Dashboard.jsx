@@ -221,7 +221,7 @@ export default function Dashboard() {
       </div>
 
       {/* 실현 손익 */}
-      {sells.length > 0 && (
+      {(
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-gray-400">실현 손익</h3>
@@ -287,23 +287,27 @@ export default function Dashboard() {
           )}
 
           {/* 최근 매도 목록 */}
-          <div className="space-y-0">
-            {filteredSells.slice(0, 5).map((sell) => (
-              <div key={sell.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
-                <div>
-                  <span className="text-sm text-white">{sell.name}</span>
-                  {sell.ticker && <span className="ml-1.5 text-xs text-gray-500 font-mono">{sell.ticker}</span>}
-                  <span className="ml-2 text-xs text-gray-600">{sell.sellDate}</span>
+          {filteredSells.length === 0 ? (
+            <p className="text-sm text-gray-600 text-center py-2">아직 매도 기록이 없습니다.</p>
+          ) : (
+            <div className="space-y-0">
+              {filteredSells.slice(0, 5).map((sell) => (
+                <div key={sell.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+                  <div>
+                    <span className="text-sm text-white">{sell.name}</span>
+                    {sell.ticker && <span className="ml-1.5 text-xs text-gray-500 font-mono">{sell.ticker}</span>}
+                    <span className="ml-2 text-xs text-gray-600">{sell.sellDate}</span>
+                  </div>
+                  <span className={`text-sm font-medium ${sell.realizedGainKRW >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {sell.realizedGainKRW >= 0 ? '+' : ''}₩{formatKRW(sell.realizedGainKRW)}
+                  </span>
                 </div>
-                <span className={`text-sm font-medium ${sell.realizedGainKRW >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {sell.realizedGainKRW >= 0 ? '+' : ''}₩{formatKRW(sell.realizedGainKRW)}
-                </span>
-              </div>
-            ))}
-            {filteredSells.length > 5 && (
-              <p className="text-xs text-gray-600 text-center pt-2">+{filteredSells.length - 5}건 더 (자산 페이지에서 전체 확인)</p>
-            )}
-          </div>
+              ))}
+              {filteredSells.length > 5 && (
+                <p className="text-xs text-gray-600 text-center pt-2">+{filteredSells.length - 5}건 더 (자산 페이지에서 전체 확인)</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
