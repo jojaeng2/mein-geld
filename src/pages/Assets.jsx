@@ -6,6 +6,16 @@ import { formatKRW, formatUSD, toKRW, calcReturn } from '../lib/utils'
 import { fetchAssetPrice, searchCryptoTicker } from '../lib/priceService'
 import { searchLocalStocks } from '../lib/stockList'
 import { useSells } from '../hooks/useSells'
+import { useAssetOrder } from '../hooks/useAssetOrder'
+import {
+  DndContext, closestCenter, PointerSensor, TouchSensor,
+  useSensor, useSensors, DragOverlay,
+} from '@dnd-kit/core'
+import {
+  SortableContext, verticalListSortingStrategy,
+  useSortable, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
@@ -585,15 +595,152 @@ function DivModal({ group, onSave, onClose }) {
   )
 }
 
+// ── 드래그 가능한 그룹 행 ────────────────────────────────
+function GroupRows({ row, settings, expanded, toggleExpand, setModal, setDivModal, setSellModal, handleDelete, isDragging }) {
+  const { key: groupKey, ticker, name, category, currency, isInvestment, totalQty, avgPurchasePrice, currentPrice, records } = row
+  const { setNodeRef, attributes, listeners, transform, transition } = useSortable({ id: groupKey })
+
+  const rate      = settings.exchangeRate
+  const isDeposit = category === 'cash'
+  const isRE      = category === 'real_estate'
+  const totalVal  = isInvestment
+    ? toKRW(currentPrice, totalQty, currency, rate)
+    : toKRW(records[0].currentPrice, records[0].quantity ?? 1, records[0].currency, rate)
+  const profitRate = isInvestment
+    ? calcReturn(avgPurchasePrice, currentPrice)
+    : calcReturn(records[0].purchasePrice, records[0].currentPrice)
+  const sym        = CURRENCIES[currency]?.symbol
+  const expandKey  = ticker || records[0].id
+  const isExpanded = expanded.has(expandKey)
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  }
+
+  return (
+    <>
+      <tr ref={setNodeRef} style={style} {...attributes}
+        className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
+        <td className="px-5 py-3">
+          <div className="flex items-center gap-2">
+            <span {...listeners} className="text-gray-600 hover:text-gray-400 cursor-grab active:cursor-grabbing text-sm select-none flex-shrink-0 px-0.5">⠿</span>
+            <button type="button" onClick={() => toggleExpand(expandKey)} className="text-gray-500 hover:text-white text-xs w-4 flex-shrink-0">
+              {isExpanded ? '▼' : '▶'}
+            </button>
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[category]?.color }} />
+            <div>
+              <p className="text-white font-medium">{name}</p>
+              {ticker && <p className="text-xs text-gray-500 font-mono">{ticker}{records.length > 1 ? ` · ${records.length}건` : ''}</p>}
+            </div>
+          </div>
+        </td>
+        <td className="px-4 py-3 text-gray-400">{CATEGORIES[category]?.label}</td>
+        <td className="px-4 py-3 text-right text-gray-300">
+          {isDeposit || isRE ? '—' : totalQty.toLocaleString()}
+        </td>
+        <td className="px-4 py-3 text-right text-gray-300">
+          {isDeposit ? (
+            <div>
+              <p className="text-xs text-gray-500">원금 {sym}{formatKRW(records[0].purchasePrice)}</p>
+              <p>만기 {sym}{formatKRW(records[0].currentPrice)}</p>
+            </div>
+          ) : isRE ? (
+            <span>보증금 {sym}{formatKRW(records[0].currentPrice)}</span>
+          ) : (
+            <span>{sym}{currency === 'KRW' ? formatKRW(currentPrice) : formatUSD(currentPrice)}</span>
+          )}
+        </td>
+        <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(totalVal)}</td>
+        <td className={`px-4 py-3 text-right font-medium ${isRE ? 'text-gray-500' : profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {isRE ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%`}
+          {isDeposit && records[0].interestRate > 0 && (
+            <p className="text-xs text-gray-500 font-normal">연 {records[0].interestRate}%</p>
+          )}
+          {isInvestment && (
+            <p className="text-xs text-gray-500 font-normal">평균 {sym}{currency === 'KRW' ? formatKRW(avgPurchasePrice) : formatUSD(avgPurchasePrice)}</p>
+          )}
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex gap-1 justify-end">
+            {isInvestment && (<>
+              <button onClick={() => setModal({ name, ticker, category, currency })}
+                className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
+              <button onClick={() => setDivModal({ name, ticker, currency, records })}
+                className="text-xs text-yellow-600 hover:text-yellow-400 transition px-2 py-1 rounded hover:bg-gray-700">배당</button>
+              <button onClick={() => setSellModal({ name, ticker, category, currency, records, totalQty, avgPurchasePrice })}
+                className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
+            </>)}
+          </div>
+        </td>
+      </tr>
+
+      {isExpanded && records.map((asset) => {
+        const subProfitRate = isInvestment
+          ? calcReturn(asset.purchasePrice, currentPrice)
+          : calcReturn(asset.purchasePrice, asset.currentPrice)
+        const subVal = toKRW(
+          isInvestment ? currentPrice : asset.currentPrice,
+          asset.quantity ?? 1, currency, settings.exchangeRate
+        )
+        const daysLeft = asset.maturityDate
+          ? Math.ceil((new Date(asset.maturityDate) - new Date()) / 86400000)
+          : null
+        return (
+          <tr key={`sub_${asset.id}`} className="border-b border-gray-800/30 bg-gray-800/20">
+            <td className="px-5 py-2.5 pl-14">
+              {isDeposit ? (
+                <div className="text-xs text-gray-400 space-y-0.5">
+                  <p>원금 {sym}{formatKRW(asset.purchasePrice)} → 만기 {sym}{formatKRW(asset.currentPrice)}</p>
+                  {asset.interestRate > 0 && <p className="text-gray-500">연 {asset.interestRate}% · {asset.startDate} ~ {asset.maturityDate}</p>}
+                </div>
+              ) : isRE ? (
+                <p className="text-xs text-gray-400">보증금 {sym}{formatKRW(asset.currentPrice)}{asset.memo ? ` · ${asset.memo}` : ''}</p>
+              ) : (
+                <p className="text-xs text-gray-400">{asset.memo || `${asset.quantity}주 @ ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}`}</p>
+              )}
+              {daysLeft !== null && (
+                <p className={`text-xs mt-0.5 ${daysLeft < 30 ? 'text-yellow-400' : daysLeft < 90 ? 'text-yellow-600' : 'text-gray-500'}`}>
+                  만기 {asset.maturityDate} (D-{daysLeft})
+                </p>
+              )}
+            </td>
+            <td />
+            <td className="px-4 py-2 text-right text-xs text-gray-500">
+              {!isDeposit && !isRE ? asset.quantity?.toLocaleString() : ''}
+            </td>
+            <td className="px-4 py-2 text-right text-xs text-gray-500">
+              {isInvestment ? `매입 ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}` : ''}
+            </td>
+            <td className="px-4 py-2 text-right text-xs text-gray-400">₩{formatKRW(subVal)}</td>
+            <td className={`px-4 py-2 text-right text-xs ${isRE ? 'text-gray-500' : subProfitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {!isRE ? `${subProfitRate >= 0 ? '+' : ''}${subProfitRate.toFixed(2)}%` : ''}
+            </td>
+            <td className="px-4 py-2">
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
+                <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
+              </div>
+            </td>
+          </tr>
+        )
+      })}
+    </>
+  )
+}
+
 // ── 메인 페이지 ───────────────────────────────────────────
 export default function Assets() {
   const { assets, loading, addAsset, updateAsset, deleteAsset } = useAssets()
   const { settings } = useSettings()
   const { sells, addSell, deleteSell } = useSells()
+  const { order, setOrder } = useAssetOrder()
   const [modal, setModal]         = useState(null)
   const [sellModal, setSellModal]   = useState(null)
   const [divModal, setDivModal]   = useState(null)
   const [filter, setFilter]       = useState('all')
+  const [activeDragId, setActiveDragId] = useState(null)
   const [expanded, setExpanded]   = useState(new Set())
   const [showAllSells, setShowAllSells] = useState(false)
 
@@ -615,7 +762,9 @@ export default function Assets() {
       const totalQty         = records.reduce((s, a) => s + (a.quantity ?? 1), 0)
       const totalPurchaseAmt = records.reduce((s, a) => s + a.purchasePrice * (a.quantity ?? 1), 0)
       const avgPurchasePrice = totalQty > 0 ? totalPurchaseAmt / totalQty : records[0].purchasePrice
+      const groupKey = records[0].ticker || `__${records[0].id}`
       return {
+        key: groupKey,
         ticker: records[0].ticker,
         name: records[0].name,
         category: records[0].category,
@@ -628,6 +777,35 @@ export default function Assets() {
       }
     })
   }, [filtered])
+
+  // 저장된 순서 적용
+  const sortedGroups = useMemo(() => {
+    if (!order.length) return displayGroups
+    const indexMap = new Map(order.map((k, i) => [k, i]))
+    return [...displayGroups].sort((a, b) => {
+      const ai = indexMap.has(a.key) ? indexMap.get(a.key) : Infinity
+      const bi = indexMap.has(b.key) ? indexMap.get(b.key) : Infinity
+      return ai - bi
+    })
+  }, [displayGroups, order])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  )
+
+  function handleDragStart({ active }) {
+    setActiveDragId(active.id)
+  }
+
+  function handleDragEnd({ active, over }) {
+    setActiveDragId(null)
+    if (!over || active.id === over.id) return
+    const keys = sortedGroups.map((g) => g.key)
+    const oldIndex = keys.indexOf(active.id)
+    const newIndex = keys.indexOf(over.id)
+    setOrder(arrayMove(keys, oldIndex, newIndex))
+  }
 
   function toggleExpand(ticker) {
     setExpanded((prev) => { const n = new Set(prev); n.has(ticker) ? n.delete(ticker) : n.add(ticker); return n })
@@ -738,130 +916,31 @@ export default function Assets() {
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+            <SortableContext items={sortedGroups.map((g) => g.key)} strategy={verticalListSortingStrategy}>
             <tbody>
-              {displayGroups.map((row) => {
-                const { ticker, name, category, currency, isInvestment, totalQty, avgPurchasePrice, currentPrice, records } = row
-                const rate      = settings.exchangeRate
-                const isDeposit = category === 'cash'
-                const isRE      = category === 'real_estate'
-                const totalVal  = isInvestment
-                  ? toKRW(currentPrice, totalQty, currency, rate)
-                  : toKRW(records[0].currentPrice, records[0].quantity ?? 1, records[0].currency, rate)
-                const profitRate = isInvestment
-                  ? calcReturn(avgPurchasePrice, currentPrice)
-                  : calcReturn(records[0].purchasePrice, records[0].currentPrice)
-                const sym       = CURRENCIES[currency]?.symbol
-                const expandKey = ticker || records[0].id
-                const isExpanded = expanded.has(expandKey)
-
-                return [
-                  <tr key={`g_${expandKey}`} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => toggleExpand(expandKey)} className="text-gray-500 hover:text-white text-xs w-4 flex-shrink-0">
-                          {isExpanded ? '▼' : '▶'}
-                        </button>
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[category]?.color }} />
-                        <div>
-                          <p className="text-white font-medium">{name}</p>
-                          {ticker && <p className="text-xs text-gray-500 font-mono">{ticker}{records.length > 1 ? ` · ${records.length}건` : ''}</p>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">{CATEGORIES[category]?.label}</td>
-                    <td className="px-4 py-3 text-right text-gray-300">
-                      {isDeposit || isRE ? '—' : totalQty.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-300">
-                      {isDeposit ? (
-                        <div>
-                          <p className="text-xs text-gray-500">원금 {sym}{formatKRW(records[0].purchasePrice)}</p>
-                          <p>만기 {sym}{formatKRW(records[0].currentPrice)}</p>
-                        </div>
-                      ) : isRE ? (
-                        <span>보증금 {sym}{formatKRW(records[0].currentPrice)}</span>
-                      ) : (
-                        <span>{sym}{currency === 'KRW' ? formatKRW(currentPrice) : formatUSD(currentPrice)}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(totalVal)}</td>
-                    <td className={`px-4 py-3 text-right font-medium ${isRE ? 'text-gray-500' : profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {isRE ? '—' : `${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%`}
-                      {isDeposit && records[0].interestRate > 0 && (
-                        <p className="text-xs text-gray-500 font-normal">연 {records[0].interestRate}%</p>
-                      )}
-                      {isInvestment && (
-                        <p className="text-xs text-gray-500 font-normal">평균 {sym}{currency === 'KRW' ? formatKRW(avgPurchasePrice) : formatUSD(avgPurchasePrice)}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1 justify-end">
-                        {isInvestment && (<>
-                          <button onClick={() => setModal({ name, ticker, category, currency })}
-                            className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
-                          <button onClick={() => setDivModal({ name, ticker, currency, records })}
-                            className="text-xs text-yellow-600 hover:text-yellow-400 transition px-2 py-1 rounded hover:bg-gray-700">배당</button>
-                          <button onClick={() => setSellModal({ name, ticker, category, currency, records, totalQty, avgPurchasePrice })}
-                            className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
-                        </>)}
-                      </div>
-                    </td>
-                  </tr>,
-
-                  ...(isExpanded ? records.map((asset) => {
-                    const subProfitRate = isInvestment
-                      ? calcReturn(asset.purchasePrice, currentPrice)
-                      : calcReturn(asset.purchasePrice, asset.currentPrice)
-                    const subVal = toKRW(
-                      isInvestment ? currentPrice : asset.currentPrice,
-                      asset.quantity ?? 1, currency, settings.exchangeRate
-                    )
-                    const daysLeft = asset.maturityDate
-                      ? Math.ceil((new Date(asset.maturityDate) - new Date()) / 86400000)
-                      : null
-
-                    return (
-                      <tr key={`sub_${asset.id}`} className="border-b border-gray-800/30 bg-gray-800/20">
-                        <td className="px-5 py-2.5 pl-14">
-                          {isDeposit ? (
-                            <div className="text-xs text-gray-400 space-y-0.5">
-                              <p>원금 {sym}{formatKRW(asset.purchasePrice)} → 만기 {sym}{formatKRW(asset.currentPrice)}</p>
-                              {asset.interestRate > 0 && <p className="text-gray-500">연 {asset.interestRate}% · {asset.startDate} ~ {asset.maturityDate}</p>}
-                            </div>
-                          ) : isRE ? (
-                            <p className="text-xs text-gray-400">보증금 {sym}{formatKRW(asset.currentPrice)}{asset.memo ? ` · ${asset.memo}` : ''}</p>
-                          ) : (
-                            <p className="text-xs text-gray-400">{asset.memo || `${asset.quantity}주 @ ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}`}</p>
-                          )}
-                          {daysLeft !== null && (
-                            <p className={`text-xs mt-0.5 ${daysLeft < 30 ? 'text-yellow-400' : daysLeft < 90 ? 'text-yellow-600' : 'text-gray-500'}`}>
-                              만기 {asset.maturityDate} (D-{daysLeft})
-                            </p>
-                          )}
-                        </td>
-                        <td />
-                        <td className="px-4 py-2 text-right text-xs text-gray-500">
-                          {!isDeposit && !isRE ? asset.quantity?.toLocaleString() : ''}
-                        </td>
-                        <td className="px-4 py-2 text-right text-xs text-gray-500">
-                          {isInvestment ? `매입 ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}` : ''}
-                        </td>
-                        <td className="px-4 py-2 text-right text-xs text-gray-400">₩{formatKRW(subVal)}</td>
-                        <td className={`px-4 py-2 text-right text-xs ${isRE ? 'text-gray-500' : subProfitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {!isRE ? `${subProfitRate >= 0 ? '+' : ''}${subProfitRate.toFixed(2)}%` : ''}
-                        </td>
-                        <td className="px-4 py-2">
-                          <div className="flex gap-2 justify-end">
-                            <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
-                            <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  }) : []),
-                ]
-              })}
+              {sortedGroups.map((row) => (
+                <GroupRows
+                  key={row.key}
+                  row={row}
+                  settings={settings}
+                  expanded={expanded}
+                  toggleExpand={toggleExpand}
+                  setModal={setModal}
+                  setDivModal={setDivModal}
+                  setSellModal={setSellModal}
+                  handleDelete={handleDelete}
+                  isDragging={activeDragId === row.key}
+                />
+              ))}
             </tbody>
+            </SortableContext>
+            </DndContext>
           </table>
           </div>
         </div>
