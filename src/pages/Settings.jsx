@@ -4,6 +4,8 @@ import { useAssets } from '../hooks/useAssets'
 import { useSnapshots } from '../hooks/useSnapshots'
 import { useAuth } from '../contexts/AuthContext'
 import { formatKRW } from '../lib/utils'
+import { doc, setDoc } from 'firebase/firestore'
+import { db } from '../lib/firebase'
 
 const ADMIN_EMAIL = 'ds4ouj@naver.com'
 
@@ -33,7 +35,7 @@ export default function Settings() {
   async function handleSaveInviteCode(e) {
     e.preventDefault()
     if (!inviteCode.trim()) return
-    await saveSettings({ ...settings, inviteCode: inviteCode.trim() })
+    await setDoc(doc(db, 'config', 'inviteCode'), { code: inviteCode.trim() })
     setInviteCode('')
     setInviteCodeSaved(true)
     setTimeout(() => setInviteCodeSaved(false), 2000)
