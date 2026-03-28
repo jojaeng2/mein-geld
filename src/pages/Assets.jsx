@@ -5,6 +5,7 @@ import { CATEGORIES, CURRENCIES } from '../lib/constants'
 import { formatKRW, formatUSD, toKRW, calcReturn } from '../lib/utils'
 import { fetchAssetPrice, searchCryptoTicker } from '../lib/priceService'
 import { searchLocalStocks } from '../lib/stockList'
+import { useSells } from '../hooks/useSells'
 
 const TODAY = new Date().toISOString().slice(0, 10)
 
@@ -104,6 +105,97 @@ function TickerSearch({ category, onSelect }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── 매도 모달 ─────────────────────────────────────────────
+function SellModal({ name, ticker, currency, records, totalQty, avgPurchasePrice, exchangeRate, onClose, onConfirm }) {
+  const [qty, setQty]     = useState('')
+  const [price, setPrice] = useState('')
+  const [date, setDate]   = useState(new Date().toISOString().slice(0, 10))
+  const [loading, setLoading] = useState(false)
+
+  const sym       = CURRENCIES[currency]?.symbol || ''
+  const sellQty   = parseFloat(qty) || 0
+  const sellPrice = parseFloat(price) || 0
+  const gain      = sellQty > 0 && sellPrice > 0 ? (sellPrice - avgPurchasePrice) * sellQty : null
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (sellQty <= 0 || sellQty > totalQty || sellPrice <= 0) return
+    setLoading(true)
+    try { await onConfirm({ qty: sellQty, price: sellPrice, date }) } finally { setLoading(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm p-6">
+        <h3 className="text-lg font-bold text-white mb-1">매도</h3>
+        <p className="text-sm text-gray-400 mb-5">
+          {name}
+          {ticker && <span className="ml-2 font-mono text-xs text-gray-600">{ticker}</span>}
+        </p>
+
+        <div className="bg-gray-800 rounded-lg p-3 mb-5 text-sm space-y-1.5">
+          <div className="flex justify-between">
+            <span className="text-gray-400">보유 수량</span>
+            <span className="text-white">{totalQty.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-400">평균 매입가</span>
+            <span className="text-white">{sym}{currency === 'KRW' ? formatKRW(avgPurchasePrice) : formatUSD(avgPurchasePrice)}</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="label">매도 수량</label>
+            <input required type="number" min="0.000001" max={totalQty} step="any" className="input"
+              placeholder={`최대 ${totalQty}`} value={qty} onChange={(e) => setQty(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">매도 단가 ({currency})</label>
+            <input required type="number" min="0" step="any" className="input"
+              placeholder="0" value={price} onChange={(e) => setPrice(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">매도일</label>
+            <input required type="date" className="input"
+              value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+
+          {gain !== null && (
+            <div className={`rounded-lg p-3 text-sm ${gain >= 0 ? 'bg-green-950 border border-green-800' : 'bg-red-950 border border-red-800'}`}>
+              <div className="flex justify-between">
+                <span className={gain >= 0 ? 'text-green-400' : 'text-red-400'}>실현 손익</span>
+                <span className={`font-semibold ${gain >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {gain >= 0 ? '+' : ''}{sym}{currency === 'KRW' ? formatKRW(gain) : formatUSD(gain)}
+                </span>
+              </div>
+              {currency !== 'KRW' && (
+                <div className="flex justify-between mt-1">
+                  <span className="text-gray-500 text-xs">KRW 환산</span>
+                  <span className={`text-xs font-medium ${gain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {gain >= 0 ? '+' : ''}₩{formatKRW(gain * exchangeRate)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition text-sm font-medium">
+              취소
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 py-2.5 rounded-lg bg-red-700 hover:bg-red-600 text-white transition text-sm font-semibold disabled:opacity-50">
+              {loading ? '처리 중...' : '매도 확정'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
@@ -375,9 +467,13 @@ function AssetModal({ initial, onSave, onClose }) {
 export default function Assets() {
   const { assets, loading, addAsset, updateAsset, deleteAsset } = useAssets()
   const { settings } = useSettings()
-  const [modal, setModal]     = useState(null)
-  const [filter, setFilter]   = useState('all')
+  const { sells, addSell, deleteSell } = useSells()
+  const [modal, setModal]       = useState(null)
+  const [sellModal, setSellModal] = useState(null)
+  const [filter, setFilter]     = useState('all')
   const [expanded, setExpanded] = useState(new Set())
+
+  const totalRealizedGainKRW = sells.reduce((s, sell) => s + (sell.realizedGainKRW ?? 0), 0)
 
   const filtered = filter === 'all' ? assets : assets.filter((a) => a.category === filter)
 
@@ -418,6 +514,50 @@ export default function Assets() {
 
   async function handleDelete(asset) {
     if (confirm(`"${asset.name}"을 삭제할까요?`)) await deleteAsset(asset.id)
+  }
+
+  async function handleSell({ qty: sellQty, price: sellPrice, date: sellDate }) {
+    const { name, ticker, category, currency, records } = sellModal
+
+    // FIFO: 오래된 매수 기록부터 차감
+    const sorted = [...records].sort((a, b) =>
+      (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0)
+    )
+
+    let remaining = sellQty
+    let totalCost = 0
+
+    for (const record of sorted) {
+      if (remaining <= 0) break
+      const consume = Math.min(remaining, record.quantity)
+      totalCost += consume * record.purchasePrice
+      remaining -= consume
+      if (consume >= record.quantity) {
+        await deleteAsset(record.id)
+      } else {
+        await updateAsset(record.id, { quantity: record.quantity - consume })
+      }
+    }
+
+    const avgBuyPrice    = totalCost / sellQty
+    const realizedGain   = (sellPrice - avgBuyPrice) * sellQty
+    const realizedGainKRW = currency === 'KRW' ? realizedGain : realizedGain * settings.exchangeRate
+
+    await addSell({
+      name,
+      ticker: ticker || '',
+      category,
+      currency,
+      quantity: sellQty,
+      avgPurchasePrice: avgBuyPrice,
+      sellPrice,
+      sellDate,
+      realizedGain,
+      realizedGainKRW,
+      exchangeRate: settings.exchangeRate,
+    })
+
+    setSellModal(null)
   }
 
   if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
@@ -499,7 +639,11 @@ export default function Assets() {
                         <p className="text-xs text-gray-500 font-normal">평균 {sym}{currency === 'KRW' ? formatKRW(avgPurchasePrice) : formatUSD(avgPurchasePrice)}</p>
                       </td>
                       <td className="px-4 py-3">
-                        <button onClick={() => setModal('add')} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
+                        <div className="flex gap-1 justify-end">
+                          <button onClick={() => setModal('add')} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
+                          <button onClick={() => setSellModal({ name, ticker, category, currency, records, totalQty, avgPurchasePrice })}
+                            className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
+                        </div>
                       </td>
                     </tr>,
                     ...(isExpanded ? records.map((asset) => {
@@ -583,10 +727,73 @@ export default function Assets() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-2 justify-end">
+                      <div className="flex gap-1 justify-end">
+                        {['stock', 'crypto'].includes(asset.category) && (
+                          <button
+                            onClick={() => setSellModal({ name: asset.name, ticker: asset.ticker, category: asset.category, currency: asset.currency, records: [asset], totalQty: asset.quantity, avgPurchasePrice: asset.purchasePrice })}
+                            className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
+                        )}
                         <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
                         <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
                       </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 매도 기록 */}
+      {sells.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+            <h3 className="text-sm font-medium text-gray-400">매도 기록</h3>
+            <div className="flex items-center gap-3">
+              <span className={`text-sm font-medium ${totalRealizedGainKRW >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                실현 손익 {totalRealizedGainKRW >= 0 ? '+' : ''}₩{formatKRW(totalRealizedGainKRW)}
+              </span>
+              <span className="text-xs text-gray-600">{sells.length}건</span>
+            </div>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800">
+                <th className="text-left px-5 py-3 text-xs text-gray-500 font-medium">날짜</th>
+                <th className="text-left px-4 py-3 text-xs text-gray-500 font-medium">종목</th>
+                <th className="text-right px-4 py-3 text-xs text-gray-500 font-medium">수량</th>
+                <th className="text-right px-4 py-3 text-xs text-gray-500 font-medium">매입가</th>
+                <th className="text-right px-4 py-3 text-xs text-gray-500 font-medium">매도가</th>
+                <th className="text-right px-4 py-3 text-xs text-gray-500 font-medium">실현 손익 (₩)</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sells.map((sell) => {
+                const sym = CURRENCIES[sell.currency]?.symbol || ''
+                return (
+                  <tr key={sell.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
+                    <td className="px-5 py-3 text-gray-300">{sell.sellDate}</td>
+                    <td className="px-4 py-3">
+                      <p className="text-white">{sell.name}</p>
+                      {sell.ticker && <p className="text-xs text-gray-500 font-mono">{sell.ticker}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-300">{sell.quantity.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right text-gray-400">
+                      {sym}{sell.currency === 'KRW' ? formatKRW(sell.avgPurchasePrice) : formatUSD(sell.avgPurchasePrice)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-300">
+                      {sym}{sell.currency === 'KRW' ? formatKRW(sell.sellPrice) : formatUSD(sell.sellPrice)}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-medium ${sell.realizedGainKRW >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {sell.realizedGainKRW >= 0 ? '+' : ''}₩{formatKRW(sell.realizedGainKRW)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => { if (confirm(`${sell.name} 매도 기록을 삭제할까요?`)) deleteSell(sell.id) }}
+                        className="text-xs text-gray-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700"
+                      >삭제</button>
                     </td>
                   </tr>
                 )
@@ -601,6 +808,15 @@ export default function Assets() {
           initial={modal === 'add' ? null : modal}
           onSave={handleSave}
           onClose={() => setModal(null)}
+        />
+      )}
+
+      {sellModal && (
+        <SellModal
+          {...sellModal}
+          exchangeRate={settings.exchangeRate}
+          onClose={() => setSellModal(null)}
+          onConfirm={handleSell}
         />
       )}
     </div>
