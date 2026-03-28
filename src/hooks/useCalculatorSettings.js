@@ -5,10 +5,10 @@ import { useAuth } from '../contexts/AuthContext'
 
 const DEFAULTS = {
   years: 10,
-  monthlyAdd: 0,
   reinvest: true,
   capitalRates: {},
   divRates: {},
+  monthlyAmounts: {},
 }
 
 export function useCalculatorSettings() {

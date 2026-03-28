@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -60,27 +60,32 @@ function formatYAxis(v) {
 export default function Dashboard() {
   const { assets, loading: assetsLoading } = useAssets()
   const { settings, loading: settingsLoading } = useSettings()
-  const { snapshots, saveSnapshot, deleteSnapshot } = useSnapshots()
+  const { snapshots, loading: snapshotsLoading, saveSnapshot, deleteSnapshot } = useSnapshots()
+  const savedRef = useRef(false)
 
   const currentTotal = useMemo(() => {
     const rate = settings.exchangeRate
     return assets.reduce((sum, a) => sum + toKRW(a.currentPrice, a.quantity, a.currency, rate), 0)
   }, [assets, settings.exchangeRate])
 
-  async function handleSaveSnapshot() {
+  useEffect(() => {
+    if (assetsLoading || settingsLoading || snapshotsLoading) return
+    if (assets.length === 0) return
+    if (savedRef.current) return
+    savedRef.current = true
     const today = new Date().toISOString().slice(0, 10)
-    const already = snapshots.find((s) => s.date === today)
-    if (already) {
-      if (!confirm(`오늘(${today}) 스냅샷이 이미 있습니다. 덮어쓸까요?`)) return
-      await deleteSnapshot(already.id)
+    const existing = snapshots.find((s) => s.date === today)
+    const run = async () => {
+      if (existing) await deleteSnapshot(existing.id)
+      await saveSnapshot({
+        date: today,
+        totalKRW: currentTotal,
+        exchangeRate: settings.exchangeRate,
+        assetCount: assets.length,
+      })
     }
-    await saveSnapshot({
-      date: today,
-      totalKRW: currentTotal,
-      exchangeRate: settings.exchangeRate,
-      assetCount: assets.length,
-    })
-  }
+    run().catch(() => { savedRef.current = false })
+  }, [assetsLoading, settingsLoading, snapshotsLoading])
 
   const stats = useMemo(() => {
     if (!assets.length) return null
@@ -146,6 +151,18 @@ export default function Dashboard() {
       .slice(0, 5)
   }, [assets, settings.exchangeRate])
 
+  const maturityAssets = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return assets
+      .filter((a) => a.maturityDate)
+      .map((a) => {
+        const diffMs = new Date(a.maturityDate) - new Date(today)
+        const dDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+        return { ...a, dDays }
+      })
+      .sort((a, b) => a.dDays - b.dDays)
+  }, [assets])
+
   if (assetsLoading || settingsLoading) {
     return <div className="p-8 text-gray-400">로딩 중...</div>
   }
@@ -154,12 +171,6 @@ export default function Dashboard() {
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">대시보드</h2>
-        <button
-          onClick={handleSaveSnapshot}
-          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
-        >
-          오늘 스냅샷 저장
-        </button>
       </div>
 
       {/* Stats */}
@@ -245,6 +256,38 @@ export default function Dashboard() {
                   <Area type="monotone" dataKey="total" stroke="#0ea5e9" strokeWidth={2} fill="url(#colorTotal)" dot={false} activeDot={{ r: 4 }} />
                 </AreaChart>
               </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 만기 예정 */}
+          {maturityAssets.length > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="text-sm font-medium text-gray-400 mb-4">만기 예정</h3>
+              <div className="space-y-2">
+                {maturityAssets.map((a) => {
+                  const isExpired = a.dDays < 0
+                  const isUrgent = a.dDays >= 0 && a.dDays <= 30
+                  const isSoon = a.dDays > 30 && a.dDays <= 90
+                  const dLabel = isExpired
+                    ? `만기 지남 (${Math.abs(a.dDays)}일 전)`
+                    : a.dDays === 0 ? 'D-Day' : `D-${a.dDays}`
+                  const dColor = isExpired ? 'text-gray-500' : isUrgent ? 'text-red-400' : isSoon ? 'text-yellow-400' : 'text-gray-400'
+                  return (
+                    <div key={a.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+                      <div>
+                        <p className="text-sm text-white">{a.name}</p>
+                        <p className="text-xs text-gray-500">{a.maturityDate} · {a.category === 'cash' ? '예금/적금' : a.category === 'real_estate' ? '부동산' : a.category}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-semibold ${dColor}`}>{dLabel}</p>
+                        {a.currentPrice > 0 && (
+                          <p className="text-xs text-gray-400">₩{formatKRW(a.currentPrice * (a.quantity ?? 1))}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
 
