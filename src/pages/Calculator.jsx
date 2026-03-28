@@ -83,7 +83,7 @@ export default function Calculator() {
   const { settings: appSettings }          = useSettings()
   const { settings, loading: calcLoading, saving, update } = useCalculatorSettings()
 
-  const { years, reinvest, capitalRates, divRates, monthlyAmounts } = settings
+  const { years, reinvest, capitalRates, divRates, monthlyAmounts, monthlySalary } = settings
 
   const groups = useMemo(() => {
     const exRate = appSettings.exchangeRate
@@ -113,8 +113,9 @@ export default function Calculator() {
       .sort((a, b) => b.currentValue - a.currentValue)
   }, [assets, appSettings.exchangeRate, capitalRates, divRates])
 
-  const totalCurrent = groups.reduce((s, g) => s + g.currentValue, 0)
+  const totalCurrent    = groups.reduce((s, g) => s + g.currentValue, 0)
   const totalMonthlyAdd = groups.reduce((s, g) => s + (Number(monthlyAmounts[g.key]) || 0), 0)
+  const investRatio     = monthlySalary > 0 ? (totalMonthlyAdd / monthlySalary) * 100 : 0
 
   const weightedRate = useMemo(() => {
     if (totalCurrent === 0) return 0
@@ -249,6 +250,49 @@ export default function Calculator() {
             </button>
           </div>
         </div>
+
+        <div>
+          <label className="label">월 고정 수입</label>
+          <div className="flex items-center gap-1.5 mt-1">
+            <input
+              type="number" min="0" step="100000"
+              value={monthlySalary || ''}
+              placeholder="0"
+              onChange={(e) => update({ monthlySalary: Number(e.target.value) || 0 })}
+              className="w-36 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-brand-500 transition"
+            />
+            <span className="text-gray-500 text-xs">₩/월</span>
+          </div>
+        </div>
+
+        {monthlySalary > 0 && (
+          <div className="flex-1 min-w-[220px]">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="label">월 투자 비율</label>
+              <span className="text-sm">
+                <span className="text-purple-300 font-medium">₩{formatKRW(totalMonthlyAdd)}</span>
+                <span className="text-gray-600"> / ₩{formatKRW(monthlySalary)}</span>
+                <span className={`ml-1.5 font-bold ${investRatio >= 30 ? 'text-green-400' : investRatio >= 10 ? 'text-brand-400' : 'text-gray-400'}`}>
+                  {investRatio.toFixed(1)}%
+                </span>
+              </span>
+            </div>
+            <div className="w-full bg-gray-800 rounded-full h-2">
+              <div
+                className="h-2 rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, investRatio)}%`,
+                  backgroundColor: investRatio >= 30 ? '#4ade80' : investRatio >= 10 ? '#0ea5e9' : '#6b7280',
+                }}
+              />
+            </div>
+            <p className="text-xs text-gray-600 mt-1">
+              {totalMonthlyAdd < monthlySalary
+                ? `잔여 ₩${formatKRW(monthlySalary - totalMonthlyAdd)} / 월`
+                : '월 수입 전액 투자 중'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 종목별 수익률 */}
@@ -327,6 +371,11 @@ export default function Calculator() {
                         />
                         <span className="text-gray-500 text-xs">₩</span>
                       </div>
+                      {monthlySalary > 0 && monthlyAmounts[g.key] > 0 && (
+                        <p className="text-xs text-gray-600 text-right mt-0.5">
+                          급여의 {((monthlyAmounts[g.key] / monthlySalary) * 100).toFixed(1)}%
+                        </p>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-right">
                       <p className="text-white font-medium">₩{formatKRW(g.projected)}</p>

@@ -9,6 +9,7 @@ const DEFAULTS = {
   capitalRates: {},
   divRates: {},
   monthlyAmounts: {},
+  monthlySalary: 0,
 }
 
 export function useCalculatorSettings() {
