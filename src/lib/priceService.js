@@ -13,24 +13,16 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
-// 한국 주식/ETF 현재가 (Yahoo Finance — 무료, CORS 허용, .KS/.KQ 지원)
-async function fetchKoreanStockPrice(symbol) {
-  const res = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
-  )
-  if (!res.ok) throw new Error('가격 조회 실패')
-  const data = await res.json()
-  const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
-  if (!price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
-  return price
-}
+// 주식/ETF 현재가 (Twelve Data — 국내/해외 통합, 800회/일)
+async function fetchStockPrice(symbol) {
+  const isKorean = isKoreanTicker(symbol)
+  const code = isKorean ? symbol.replace(/\.(KS|KQ)$/, '') : symbol
+  const params = isKorean
+    ? `symbol=${code}&exchange=KRX&apikey=${TD_KEY}`
+    : `symbol=${symbol}&apikey=${TD_KEY}`
 
-// 미국 주식/ETF 현재가 (Twelve Data — 800회/일)
-async function fetchUSStockPrice(symbol) {
-  const res = await fetch(
-    `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${TD_KEY}`
-  )
-  if (!res.ok) throw new Error('Twelve Data 조회 실패')
+  const res = await fetch(`https://api.twelvedata.com/price?${params}`)
+  if (!res.ok) throw new Error('가격 조회 실패')
   const data = await res.json()
   if (data.status === 'error' || !data.price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
   return parseFloat(data.price)
@@ -43,10 +35,8 @@ export async function fetchAssetPrice(asset) {
   if (asset.category === 'crypto') {
     const prices = await fetchCryptoPrice(asset.ticker)
     return asset.currency === 'USD' ? prices.usd : prices.krw
-  } else if (isKoreanTicker(asset.ticker)) {
-    return fetchKoreanStockPrice(asset.ticker)
   } else {
-    return fetchUSStockPrice(asset.ticker)
+    return fetchStockPrice(asset.ticker)
   }
 }
 
