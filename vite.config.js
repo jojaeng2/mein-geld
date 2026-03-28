@@ -5,4 +5,13 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: './',
+  server: {
+    proxy: {
+      '/naver-stock': {
+        target: 'https://m.stock.naver.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/naver-stock/, ''),
+      },
+    },
+  },
 })

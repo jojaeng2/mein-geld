@@ -13,11 +13,16 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
-// 한국 주식/ETF 현재가 (Naver Finance + corsproxy.io)
+// 한국 주식/ETF 현재가 (Naver Finance)
+// 로컬: Vite proxy(/naver-stock) | 배포: corsproxy.io
 async function fetchKoreanStockPrice(symbol) {
   const code = symbol.replace(/\.(KS|KQ)$/, '')
-  const target = `https://m.stock.naver.com/api/stock/${code}/basic`
-  const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(target)}`)
+  const isLocal = window.location.hostname === 'localhost'
+  const url = isLocal
+    ? `/naver-stock/api/stock/${code}/basic`
+    : `https://corsproxy.io/?url=${encodeURIComponent(`https://m.stock.naver.com/api/stock/${code}/basic`)}`
+
+  const res = await fetch(url)
   if (!res.ok) throw new Error('가격 조회 실패')
   const data = await res.json()
   const price = data?.closePrice ? parseFloat(data.closePrice.replace(/,/g, '')) : null
