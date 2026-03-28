@@ -1,6 +1,4 @@
-const TD_KEY = import.meta.env.VITE_TWELVE_DATA_KEY
-
-const isKoreanTicker = (symbol) => symbol.endsWith('.KS') || symbol.endsWith('.KQ')
+const PROXY_URL = import.meta.env.VITE_KR_PROXY_URL
 
 // 암호화폐 현재가 (CoinGecko, 키 불필요)
 export async function fetchCryptoPrice(coinId, currency = 'krw') {
@@ -13,27 +11,16 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
-// 한국 주식/ETF 현재가 (Cloudflare Worker → Naver Finance)
-async function fetchKoreanStockPrice(symbol) {
-  const proxyUrl = import.meta.env.VITE_KR_PROXY_URL
-  if (!proxyUrl) throw new Error('VITE_KR_PROXY_URL 환경변수가 설정되지 않았습니다.')
-
+// 주식/ETF 현재가 (Cloudflare Worker → Naver Finance, 한국/미국 공통)
+async function fetchStockPrice(symbol) {
+  if (!PROXY_URL) throw new Error('VITE_KR_PROXY_URL 환경변수가 설정되지 않았습니다.')
   const code = symbol.replace(/\.(KS|KQ)$/, '')
-  const res = await fetch(`${proxyUrl}?code=${code}`)
+  const res = await fetch(`${PROXY_URL}?code=${code}`)
   if (!res.ok) throw new Error('가격 조회 실패')
   const data = await res.json()
   const priceStr = data?.closePrice
   if (!priceStr) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
   return parseFloat(priceStr.replace(/,/g, ''))
-}
-
-// 미국 주식/ETF 현재가 (Twelve Data — 800회/일)
-async function fetchUSStockPrice(symbol) {
-  const res = await fetch(`https://api.twelvedata.com/price?symbol=${symbol}&apikey=${TD_KEY}`)
-  if (!res.ok) throw new Error('가격 조회 실패')
-  const data = await res.json()
-  if (data.status === 'error' || !data.price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
-  return parseFloat(data.price)
 }
 
 // 자산 카테고리·티커에 따라 적절한 API 호출 → 현재 단가 반환
@@ -43,10 +30,8 @@ export async function fetchAssetPrice(asset) {
   if (asset.category === 'crypto') {
     const prices = await fetchCryptoPrice(asset.ticker)
     return asset.currency === 'USD' ? prices.usd : prices.krw
-  } else if (isKoreanTicker(asset.ticker)) {
-    return fetchKoreanStockPrice(asset.ticker)
   } else {
-    return fetchUSStockPrice(asset.ticker)
+    return fetchStockPrice(asset.ticker)
   }
 }
 
