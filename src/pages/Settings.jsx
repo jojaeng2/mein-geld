@@ -5,7 +5,7 @@ import { useSnapshots } from '../hooks/useSnapshots'
 import { formatKRW } from '../lib/utils'
 
 export default function Settings() {
-  const { settings, saveSettings } = useSettings()
+  const { settings, saveSettings, refreshRate, rateUpdating } = useSettings()
   const { assets, addAsset } = useAssets()
   const { snapshots } = useSnapshots()
 
@@ -85,13 +85,32 @@ export default function Settings() {
 
       {/* Exchange rate */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h3 className="text-sm font-medium text-white mb-1">환율 설정</h3>
-        <p className="text-xs text-gray-500 mb-4">달러 자산의 원화 환산에 사용됩니다.</p>
-
-        <p className="text-sm text-gray-400 mb-3">
-          현재 환율:{' '}
-          <span className="text-white font-medium">₩{formatKRW(settings.exchangeRate)} / USD</span>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-sm font-medium text-white">환율 설정</h3>
+          <button
+            onClick={refreshRate}
+            disabled={rateUpdating}
+            className="text-xs text-brand-400 hover:text-brand-300 disabled:text-gray-500 transition flex items-center gap-1"
+          >
+            {rateUpdating ? '갱신 중...' : '↻ 지금 갱신'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          앱 실행 시 자동 갱신됩니다 (1시간 캐시). 수동으로 입력할 수도 있습니다.
         </p>
+
+        <div className="mb-3">
+          <p className="text-sm text-gray-400">
+            현재 환율:{' '}
+            <span className="text-white font-medium">₩{formatKRW(settings.exchangeRate)} / USD</span>
+            {rateUpdating && <span className="ml-2 text-xs text-gray-500">갱신 중...</span>}
+          </p>
+          {settings.rateUpdatedAt && (
+            <p className="text-xs text-gray-600 mt-0.5">
+              마지막 갱신: {settings.rateUpdatedAt.toDate?.().toLocaleString('ko-KR') ?? '-'}
+            </p>
+          )}
+        </div>
 
         <form onSubmit={handleSaveRate} className="flex gap-3">
           <input
@@ -99,7 +118,7 @@ export default function Settings() {
             min="1"
             step="1"
             className="input w-40"
-            placeholder="예: 1350"
+            placeholder="직접 입력"
             value={rate}
             onChange={(e) => setRate(e.target.value)}
           />
