@@ -11,14 +11,23 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
+// Yahoo Finance 형식(.KS/.KQ) → Twelve Data 형식(:KRX) 변환
+function toTwelveDataSymbol(symbol) {
+  if (symbol.endsWith('.KS') || symbol.endsWith('.KQ')) {
+    return symbol.replace(/\.(KS|KQ)$/, ':KRX')
+  }
+  return symbol
+}
+
 // 주식/ETF 현재가 (Twelve Data — 800회/일 무료)
 export async function fetchStockPrice(symbol) {
+  const tdSymbol = toTwelveDataSymbol(symbol)
   const res = await fetch(
-    `https://api.twelvedata.com/price?symbol=${encodeURIComponent(symbol)}&apikey=${TD_KEY}`
+    `https://api.twelvedata.com/price?symbol=${encodeURIComponent(tdSymbol)}&apikey=${TD_KEY}`
   )
   if (!res.ok) throw new Error('Twelve Data 조회 실패')
   const data = await res.json()
-  if (data.status === 'error' || !data.price) throw new Error(data.message || `티커를 찾을 수 없습니다: ${symbol}`)
+  if (data.status === 'error' || !data.price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
   return parseFloat(data.price)
 }
 
