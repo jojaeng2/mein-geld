@@ -35,7 +35,7 @@ export default function Settings() {
   async function handleSaveInviteCode(e) {
     e.preventDefault()
     if (!inviteCode.trim()) return
-    await setDoc(doc(db, 'config', 'inviteCode'), { code: inviteCode.trim() })
+    await saveSettings({ ...settings, inviteCode: inviteCode.trim() })
     setInviteCode('')
     setInviteCodeSaved(true)
     setTimeout(() => setInviteCodeSaved(false), 2000)

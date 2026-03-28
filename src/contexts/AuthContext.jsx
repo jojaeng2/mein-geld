@@ -21,8 +21,8 @@ export function AuthProvider({ children }) {
   const logout = () => signOut(auth)
 
   async function register(email, password, inviteCode) {
-    const snap = await getDoc(doc(db, 'config', 'inviteCode'))
-    const storedCode = snap.exists() ? snap.data().code : null
+    const snap = await getDoc(doc(db, 'config', 'settings'))
+    const storedCode = snap.exists() ? snap.data().inviteCode : null
     if (!storedCode || inviteCode !== storedCode) {
       throw new Error('초대 코드가 올바르지 않습니다.')
     }
