@@ -282,7 +282,7 @@ function AssetModal({ initial, onSave, onClose }) {
     if (isCash) {
       payload.quantity      = 1
       payload.purchasePrice = Number(form.purchasePrice) || 0
-      payload.currentPrice  = maturityValue ?? Number(form.purchasePrice) ?? 0
+      payload.currentPrice  = Number(form.purchasePrice) || 0  // 원금 = 현재가 (이자는 만기 후 별도 입력)
       payload.ticker        = ''
     } else if (isRealEstate) {
       payload.quantity      = 1
@@ -610,7 +610,7 @@ function GroupRows({ row, settings, expanded, toggleExpand, setModal, setDivModa
   const profitRate = isInvestment
     ? calcReturn(avgPurchasePrice, currentPrice)
     : calcReturn(records[0].purchasePrice, records[0].currentPrice)
-  const showProfitRate = !isRE && !(isOther && !records[0].purchasePrice)
+  const showProfitRate = isInvestment
   const sym        = CURRENCIES[currency]?.symbol
   const expandKey  = ticker || records[0].id
   const isExpanded = expanded.has(expandKey)
