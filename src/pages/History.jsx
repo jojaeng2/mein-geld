@@ -140,15 +140,9 @@ export default function History() {
           </div>
         </div>
 
-        {filteredData.length < 2 ? (
-          <div className="h-52 flex flex-col items-center justify-center text-gray-500 text-sm gap-1">
-            <p>차트를 표시하려면 스냅샷이 2개 이상 필요합니다.</p>
-            {snapshots.length < 2 && (
-              <p className="text-xs text-gray-600">대시보드에서 "오늘 스냅샷 저장" 버튼을 눌러보세요.</p>
-            )}
-            {snapshots.length >= 2 && (
-              <p className="text-xs text-gray-600">다른 기간을 선택해보세요.</p>
-            )}
+        {filteredData.length === 0 ? (
+          <div className="h-52 flex items-center justify-center text-gray-500 text-sm">
+            <p>해당 기간에 스냅샷이 없습니다. 다른 기간을 선택해보세요.</p>
           </div>
         ) : (
           <>
@@ -193,7 +187,7 @@ export default function History() {
                   stroke="#0ea5e9"
                   strokeWidth={2}
                   fill="url(#gradTotal)"
-                  dot={filteredData.length <= 30 ? { fill: '#0ea5e9', r: 3 } : false}
+                  dot={filteredData.length <= 30 ? { fill: '#0ea5e9', r: filteredData.length === 1 ? 5 : 3 } : false}
                   activeDot={{ r: 5, fill: '#0ea5e9' }}
                 />
               </AreaChart>
@@ -210,7 +204,7 @@ export default function History() {
         </div>
         {snapshots.length === 0 ? (
           <div className="p-8 text-center text-gray-500 text-sm">
-            아직 스냅샷이 없습니다. 대시보드에서 "오늘 스냅샷 저장"을 눌러보세요.
+            아직 스냅샷이 없습니다. 대시보드에 접속하면 자동으로 저장됩니다.
           </div>
         ) : (
           <table className="w-full text-sm">
