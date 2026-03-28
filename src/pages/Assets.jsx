@@ -498,6 +498,73 @@ function AssetModal({ initial, onSave, onClose }) {
   )
 }
 
+// ── 배당 설정 모달 ────────────────────────────────────────
+function DivModal({ group, onSave, onClose }) {
+  const [divPerShare, setDivPerShare] = useState(String(group.records[0]?.divPerShare || ''))
+  const [divMonths, setDivMonths]     = useState(group.records[0]?.divMonths || [])
+  const [loading, setLoading]         = useState(false)
+
+  const sym = group.currency === 'KRW' ? '₩' : '$'
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      await onSave({ divPerShare: Number(divPerShare) || 0, divMonths })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function toggleMonth(m) {
+    setDivMonths((cur) => cur.includes(m) ? cur.filter(x => x !== m) : [...cur, m].sort((a,b)=>a-b))
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="text-base font-semibold text-white">배당 설정</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{group.name}{group.ticker ? ` · ${group.ticker}` : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="label">1주당 배당금 ({sym})</label>
+            <input type="number" min="0" step="any" className="input" placeholder="0.00"
+              value={divPerShare} onChange={(e) => setDivPerShare(e.target.value)} />
+          </div>
+          {Number(divPerShare) > 0 && (
+            <div>
+              <label className="label">배당 지급 월 <span className="text-gray-600 font-normal">복수 선택 가능</span></label>
+              <div className="grid grid-cols-6 gap-1 mt-1">
+                {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => (
+                  <button key={m} type="button" onClick={() => toggleMonth(m)}
+                    className={`py-1.5 rounded text-xs font-medium border transition-colors ${divMonths.includes(m) ? 'bg-blue-600 text-white border-blue-600' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}`}>
+                    {m}월
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition text-sm font-medium">
+              취소
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white transition text-sm font-semibold disabled:opacity-50">
+              {loading ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── 메인 페이지 ───────────────────────────────────────────
 export default function Assets() {
   const { assets, loading, addAsset, updateAsset, deleteAsset } = useAssets()
@@ -505,6 +572,7 @@ export default function Assets() {
   const { sells, addSell, deleteSell } = useSells()
   const [modal, setModal]         = useState(null)
   const [sellModal, setSellModal]   = useState(null)
+  const [divModal, setDivModal]   = useState(null)
   const [filter, setFilter]       = useState('all')
   const [expanded, setExpanded]   = useState(new Set())
   const [showAllSells, setShowAllSells] = useState(false)
@@ -552,6 +620,12 @@ export default function Assets() {
 
   async function handleDelete(asset) {
     if (confirm(`"${asset.name}"을 삭제할까요?`)) await deleteAsset(asset.id)
+  }
+
+  async function handleDivSave({ divPerShare, divMonths }) {
+    const { records } = divModal
+    await Promise.all(records.map((r) => updateAsset(r.id, { divPerShare, divMonths })))
+    setDivModal(null)
   }
 
   async function handleSell({ qty: sellQty, price: sellPrice, date: sellDate }) {
@@ -704,6 +778,8 @@ export default function Assets() {
                         {isInvestment && (<>
                           <button onClick={() => setModal({ name, ticker, category, currency })}
                             className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">+ 추가</button>
+                          <button onClick={() => setDivModal({ name, ticker, currency, records })}
+                            className="text-xs text-yellow-600 hover:text-yellow-400 transition px-2 py-1 rounded hover:bg-gray-700">배당</button>
                           <button onClick={() => setSellModal({ name, ticker, category, currency, records, totalQty, avgPurchasePrice })}
                             className="text-xs text-red-500 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">매도</button>
                         </>)}
@@ -851,6 +927,14 @@ export default function Assets() {
           exchangeRate={settings.exchangeRate}
           onClose={() => setSellModal(null)}
           onConfirm={handleSell}
+        />
+      )}
+
+      {divModal && (
+        <DivModal
+          group={divModal}
+          onSave={handleDivSave}
+          onClose={() => setDivModal(null)}
         />
       )}
     </div>

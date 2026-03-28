@@ -142,7 +142,7 @@ export default function Settings() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <h3 className="text-sm font-medium text-white mb-1">초대 코드 설정</h3>
           <p className="text-xs text-gray-500 mb-4">
-            회원가입 시 필요한 코드입니다. 본인과 여자친구만 알 수 있도록 설정해주세요.
+            회원가입 시 필요한 코드입니다. 추천인만 알 수 있게 설정해주세요.
           </p>
           {settings.inviteCode && (
             <p className="text-sm text-gray-400 mb-3">

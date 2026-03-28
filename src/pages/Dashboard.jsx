@@ -64,7 +64,9 @@ export default function Dashboard() {
   const { snapshots, loading: snapshotsLoading, saveSnapshot, deleteSnapshot } = useSnapshots()
   const { sells } = useSells()
   const savedRef = useRef(false)
-  const [sellTab, setSellTab] = useState('all')
+  const [sellTab, setSellTab]       = useState('all')
+  const [sellPeriod, setSellPeriod] = useState('all')
+  const [divPeriod, setDivPeriod]   = useState('year')
 
   const currentTotal = useMemo(() => {
     const rate = settings.exchangeRate
@@ -170,10 +172,16 @@ export default function Dashboard() {
   const currentYear = new Date().getFullYear().toString()
 
   const filteredSells = useMemo(() => {
-    if (sellTab === 'domestic') return sells.filter((s) => s.currency === 'KRW')
-    if (sellTab === 'overseas') return sells.filter((s) => s.currency !== 'KRW')
-    return sells
-  }, [sells, sellTab])
+    const now = new Date()
+    const yearStr  = now.getFullYear().toString()
+    const monthStr = `${yearStr}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    let list = sells
+    if (sellTab    === 'domestic') list = list.filter((s) => s.currency === 'KRW')
+    if (sellTab    === 'overseas') list = list.filter((s) => s.currency !== 'KRW')
+    if (sellPeriod === 'year')     list = list.filter((s) => s.sellDate?.startsWith(yearStr))
+    if (sellPeriod === 'month')    list = list.filter((s) => s.sellDate?.startsWith(monthStr))
+    return list
+  }, [sells, sellTab, sellPeriod])
 
   const totalGainKRW = filteredSells.reduce((s, sell) => s + (sell.realizedGainKRW ?? 0), 0)
 
@@ -186,16 +194,25 @@ export default function Dashboard() {
   const taxableGain  = Math.max(0, overseasGainThisYear - DEDUCTION)
   const estimatedTax = Math.round(taxableGain * 0.22)
 
-  // 예상 배당금: divPerShare > 0 && divMonths 있는 자산만
+  // 예상 배당금: 티커별로 묶어서 divPerShare × 총수량 계산
   const dividendByMonth = useMemo(() => {
     const rate = settings.exchangeRate
     const monthly = Array(12).fill(0)
+    // 티커별 그룹화 (티커 없는 자산 제외)
+    const map = new Map()
     for (const asset of assets) {
-      if (!asset.divPerShare || !asset.divMonths?.length) continue
-      // 1주당 배당금 × 보유 수량 → KRW 환산
-      const divKRW = toKRW(asset.divPerShare, asset.quantity, asset.currency, rate)
-      const perPayout = divKRW / asset.divMonths.length
-      for (const m of asset.divMonths) {
+      if (!asset.ticker) continue
+      if (!map.has(asset.ticker)) map.set(asset.ticker, [])
+      map.get(asset.ticker).push(asset)
+    }
+    for (const [, records] of map) {
+      // divPerShare/divMonths는 모든 레코드에 동일하게 저장 — 첫 번째에서 읽음
+      const rep = records.find((r) => r.divPerShare > 0) ?? records[0]
+      if (!rep.divPerShare || !rep.divMonths?.length) continue
+      const totalQty = records.reduce((s, r) => s + (r.quantity ?? 0), 0)
+      const divKRW = toKRW(rep.divPerShare, totalQty, rep.currency, rate)
+      const perPayout = divKRW / rep.divMonths.length
+      for (const m of rep.divMonths) {
         monthly[m - 1] += perPayout
       }
     }
@@ -203,7 +220,10 @@ export default function Dashboard() {
   }, [assets, settings.exchangeRate])
 
   const annualDividend = dividendByMonth.reduce((s, v) => s + v, 0)
-  const hasDividend = annualDividend > 0
+  const now = new Date()
+  const thisMonth = now.getMonth() // 0-indexed
+  const thisQuarterMonths = [0,1,2].map((offset) => (Math.floor(thisMonth / 3) * 3) + offset)
+  const quarterDividend = thisQuarterMonths.reduce((s, m) => s + dividendByMonth[m], 0)
 
   if (assetsLoading || settingsLoading) {
     return <div className="p-8 text-gray-400">로딩 중...</div>
@@ -240,58 +260,75 @@ export default function Dashboard() {
       </div>
 
       {/* 예상 배당금 */}
-      {hasDividend && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-400">예상 배당금</h3>
-            <span className="text-xs text-gray-600">배당수익률 기준 추정치</span>
-          </div>
-          <div className="grid grid-cols-2 gap-4 mb-5">
-            <div>
-              <p className="text-xs text-gray-500 mb-1">연간 예상 배당금</p>
-              <p className="text-2xl font-bold text-yellow-400">₩{formatKRW(Math.round(annualDividend))}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-1">월 평균</p>
-              <p className="text-2xl font-bold text-white">₩{formatKRW(Math.round(annualDividend / 12))}</p>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 mb-2">월별 예상 배당금</p>
-            <div className="grid grid-cols-6 gap-1.5">
-              {dividendByMonth.map((amt, i) => {
-                const month = i + 1
-                const now = new Date()
-                const isThisMonth = now.getMonth() === i
-                const max = Math.max(...dividendByMonth)
-                const pct = max > 0 ? (amt / max) * 100 : 0
-                return (
-                  <div key={month} className={`rounded-lg p-2 text-center ${isThisMonth ? 'bg-yellow-900/30 border border-yellow-700/50' : 'bg-gray-800'}`}>
-                    <p className="text-xs text-gray-500 mb-1">{month}월</p>
-                    {amt > 0 ? (
-                      <>
-                        <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
-                          <div className="bg-yellow-500 h-1 rounded-full" style={{ width: `${pct}%` }} />
-                        </div>
-                        <p className="text-xs font-medium text-yellow-400">
-                          {amt >= 10000 ? `${Math.round(amt / 10000)}만` : formatKRW(Math.round(amt))}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-gray-700">-</p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-gray-400">예상 배당금</h3>
+          <div className="flex gap-1">
+            {[['month', '이번달'], ['quarter', '이번분기'], ['year', '올해']].map(([v, label]) => (
+              <button key={v} onClick={() => setDivPeriod(v)}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition ${divPeriod === v ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                {label}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+        {annualDividend === 0 ? (
+          <p className="text-sm text-gray-600 text-center py-4">배당 정보가 있는 종목이 없습니다.<br/><span className="text-xs">자산 관리에서 종목별 배당 버튼으로 설정하세요.</span></p>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-3 mb-5">
+              <div className={`rounded-lg p-3 ${divPeriod === 'month' ? 'bg-yellow-900/20 border border-yellow-700/40' : 'bg-gray-800'}`}>
+                <p className="text-xs text-gray-500 mb-1">이번달 ({thisMonth + 1}월)</p>
+                <p className="text-lg font-bold text-yellow-400">₩{formatKRW(Math.round(dividendByMonth[thisMonth]))}</p>
+              </div>
+              <div className={`rounded-lg p-3 ${divPeriod === 'quarter' ? 'bg-yellow-900/20 border border-yellow-700/40' : 'bg-gray-800'}`}>
+                <p className="text-xs text-gray-500 mb-1">이번분기</p>
+                <p className="text-lg font-bold text-yellow-400">₩{formatKRW(Math.round(quarterDividend))}</p>
+              </div>
+              <div className={`rounded-lg p-3 ${divPeriod === 'year' ? 'bg-yellow-900/20 border border-yellow-700/40' : 'bg-gray-800'}`}>
+                <p className="text-xs text-gray-500 mb-1">올해 연간</p>
+                <p className="text-lg font-bold text-yellow-400">₩{formatKRW(Math.round(annualDividend))}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-2">월별 예상 배당금</p>
+              <div className="grid grid-cols-6 gap-1.5">
+                {dividendByMonth.map((amt, i) => {
+                  const month = i + 1
+                  const isThisMonth = thisMonth === i
+                  const isHighlighted = divPeriod === 'month' ? isThisMonth
+                    : divPeriod === 'quarter' ? thisQuarterMonths.includes(i)
+                    : true
+                  const max = Math.max(...dividendByMonth, 1)
+                  const pct = (amt / max) * 100
+                  return (
+                    <div key={month} className={`rounded-lg p-2 text-center transition-colors ${isThisMonth ? 'bg-yellow-900/30 border border-yellow-700/50' : isHighlighted ? 'bg-gray-800' : 'bg-gray-800/40'}`}>
+                      <p className={`text-xs mb-1 ${isHighlighted ? 'text-gray-400' : 'text-gray-600'}`}>{month}월</p>
+                      {amt > 0 ? (
+                        <>
+                          <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
+                            <div className={`h-1 rounded-full ${isHighlighted ? 'bg-yellow-500' : 'bg-gray-600'}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className={`text-xs font-medium ${isHighlighted ? 'text-yellow-400' : 'text-gray-600'}`}>
+                            {amt >= 10000 ? `${Math.round(amt / 10000)}만` : formatKRW(Math.round(amt))}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-700">-</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* 실현 손익 */}
       {(
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-medium text-gray-400">실현 손익</h3>
             <div className="flex gap-1">
               {[['all', '전체'], ['domestic', '국내'], ['overseas', '해외']].map(([v, label]) => (
@@ -301,6 +338,14 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+          </div>
+          <div className="flex gap-1 mb-4">
+            {[['all', '전체'], ['year', '올해'], ['month', '이번달']].map(([v, label]) => (
+              <button key={v} onClick={() => setSellPeriod(v)}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition ${sellPeriod === v ? 'bg-gray-700 text-white' : 'text-gray-600 hover:text-gray-400'}`}>
+                {label}
+              </button>
+            ))}
           </div>
 
           <div className="grid grid-cols-2 gap-4 mb-4">
