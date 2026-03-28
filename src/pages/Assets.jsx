@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAssets } from '../hooks/useAssets'
 import { useSettings } from '../hooks/useSettings'
 import { CATEGORIES, CURRENCIES } from '../lib/constants'
@@ -25,7 +25,6 @@ function TickerSearch({ category, onSelect }) {
   const timerRef = useRef(null)
   const wrapperRef = useRef(null)
 
-  // 바깥 클릭 시 닫기
   useEffect(() => {
     function handleClick(e) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false)
@@ -42,7 +41,6 @@ function TickerSearch({ category, onSelect }) {
     if (!val.trim()) { setResults([]); return }
 
     if (category === 'crypto') {
-      // 암호화폐: CoinGecko API (무제한)
       timerRef.current = setTimeout(async () => {
         setSearching(true)
         try {
@@ -54,7 +52,6 @@ function TickerSearch({ category, onSelect }) {
         }
       }, 500)
     } else {
-      // 주식/ETF: 로컬 데이터 검색 (API 사용 0회, 즉시 응답)
       setResults(searchLocalStocks(val))
     }
   }
@@ -130,11 +127,10 @@ function AssetModal({ initial, onSave, onClose }) {
   function handleTickerSelect(item) {
     if (form.category === 'crypto') {
       set('ticker', item.symbol) // CoinGecko ID
-      if (!form.name) set('name', item.name)
+      set('name', item.name)    // 항상 자동 설정
     } else {
       set('ticker', item.symbol)
-      if (!form.name) set('name', item.name)
-      // 국내주식(KS/KQ)이면 KRW, 그 외엔 USD
+      set('name', item.name)    // 항상 자동 설정
       const isKorean = item.symbol.endsWith('.KS') || item.symbol.endsWith('.KQ')
       set('currency', isKorean ? 'KRW' : 'USD')
     }
@@ -179,17 +175,6 @@ function AssetModal({ initial, onSave, onClose }) {
         </h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="label">자산명</label>
-              <input
-                required
-                className="input"
-                placeholder="예: 삼성전자"
-                value={form.name}
-                onChange={(e) => set('name', e.target.value)}
-              />
-            </div>
-
             <div>
               <label className="label">카테고리</label>
               <select
@@ -228,7 +213,7 @@ function AssetModal({ initial, onSave, onClose }) {
                       <span className="text-sm font-mono text-white">{form.ticker}</span>
                       <button
                         type="button"
-                        onClick={() => set('ticker', '')}
+                        onClick={() => { set('ticker', ''); set('name', '') }}
                         className="ml-auto text-gray-500 hover:text-white text-xs"
                       >✕</button>
                     </div>
@@ -247,6 +232,17 @@ function AssetModal({ initial, onSave, onClose }) {
                 )}
               </div>
             )}
+
+            <div className="col-span-2">
+              <label className="label">자산명</label>
+              <input
+                required
+                className="input"
+                placeholder={hasTicker ? '종목 검색 시 자동 입력' : '예: 예금, 현금'}
+                value={form.name}
+                onChange={(e) => set('name', e.target.value)}
+              />
+            </div>
 
             <div>
               <label className="label">수량</label>
@@ -330,8 +326,48 @@ export default function Assets() {
   const [filter, setFilter] = useState('all')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResult, setRefreshResult] = useState(null)
+  const [expanded, setExpanded] = useState(new Set())
 
   const filtered = filter === 'all' ? assets : assets.filter((a) => a.category === filter)
+
+  // 동일 티커끼리 그룹화
+  const displayGroups = useMemo(() => {
+    const map = new Map()
+    for (const asset of filtered) {
+      const key = asset.ticker || `__${asset.id}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(asset)
+    }
+    return Array.from(map.values()).map((records) => {
+      if (!records[0].ticker || records.length === 1) {
+        return { isGroup: false, asset: records[0] }
+      }
+      const totalQty = records.reduce((s, a) => s + a.quantity, 0)
+      const totalPurchaseAmt = records.reduce((s, a) => s + a.purchasePrice * a.quantity, 0)
+      const avgPurchasePrice = totalPurchaseAmt / totalQty
+      const currentPrice = records[0].currentPrice
+      return {
+        isGroup: true,
+        ticker: records[0].ticker,
+        name: records[0].name,
+        category: records[0].category,
+        currency: records[0].currency,
+        totalQty,
+        avgPurchasePrice,
+        currentPrice,
+        records,
+      }
+    })
+  }, [filtered])
+
+  function toggleExpand(ticker) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(ticker)) next.delete(ticker)
+      else next.add(ticker)
+      return next
+    })
+  }
 
   async function handleSave(data) {
     if (data.id) {
@@ -356,17 +392,27 @@ export default function Assets() {
     }
     setRefreshing(true)
     setRefreshResult(null)
-    let success = 0
-    let failed = []
 
+    // 같은 티커는 API 1회만 호출
+    const byTicker = new Map()
     for (const asset of targets) {
+      if (!byTicker.has(asset.ticker)) byTicker.set(asset.ticker, [])
+      byTicker.get(asset.ticker).push(asset)
+    }
+
+    let success = 0
+    const failed = []
+
+    for (const [, records] of byTicker) {
       try {
-        const price = await fetchAssetPrice(asset)
-        await updateAsset(asset.id, { ...asset, currentPrice: price })
-        success++
+        const price = await fetchAssetPrice(records[0])
+        for (const asset of records) {
+          await updateAsset(asset.id, { ...asset, currentPrice: price })
+        }
+        success += records.length
         await new Promise((r) => setTimeout(r, 1200))
       } catch {
-        failed.push(asset.name)
+        failed.push(records[0].name)
       }
     }
 
@@ -423,7 +469,7 @@ export default function Assets() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {displayGroups.length === 0 ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-12 text-center">
           <p className="text-gray-400">자산이 없습니다.</p>
         </div>
@@ -442,7 +488,87 @@ export default function Assets() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((asset) => {
+              {displayGroups.map((row) => {
+                if (row.isGroup) {
+                  const { ticker, name, category, currency, totalQty, avgPurchasePrice, currentPrice, records } = row
+                  const rate = settings.exchangeRate
+                  const totalCurrentVal = toKRW(currentPrice, totalQty, currency, rate)
+                  const profitRate = calcReturn(avgPurchasePrice, currentPrice)
+                  const sym = CURRENCIES[currency]?.symbol
+                  const isExpanded = expanded.has(ticker)
+
+                  return [
+                    // 그룹 요약 행
+                    <tr key={`g_${ticker}`} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(ticker)}
+                            className="text-gray-500 hover:text-white text-xs w-4 flex-shrink-0"
+                          >
+                            {isExpanded ? '▼' : '▶'}
+                          </button>
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[category]?.color }} />
+                          <div>
+                            <p className="text-white font-medium">{name}</p>
+                            <p className="text-xs text-gray-500 font-mono">{ticker} · {records.length}건</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-400">{CATEGORIES[category]?.label}</td>
+                      <td className="px-4 py-3 text-right text-gray-300">{totalQty.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right text-gray-300">
+                        {sym}{currency === 'KRW' ? formatKRW(currentPrice) : formatUSD(currentPrice)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-white font-medium">₩{formatKRW(totalCurrentVal)}</td>
+                      <td className={`px-4 py-3 text-right font-medium ${profitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {profitRate >= 0 ? '+' : ''}{profitRate.toFixed(2)}%
+                        <p className="text-xs text-gray-500 font-normal">평균매입 {sym}{currency === 'KRW' ? formatKRW(avgPurchasePrice) : formatUSD(avgPurchasePrice)}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => setModal('add')}
+                            className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700"
+                          >
+                            + 추가
+                          </button>
+                        </div>
+                      </td>
+                    </tr>,
+                    // 확장 시 개별 매수 기록
+                    ...(isExpanded ? records.map((asset) => {
+                      const subProfitRate = calcReturn(asset.purchasePrice, currentPrice)
+                      const subCurrentVal = toKRW(currentPrice, asset.quantity, currency, rate)
+                      return (
+                        <tr key={`sub_${asset.id}`} className="border-b border-gray-800/30 bg-gray-800/20">
+                          <td className="px-5 py-2 pl-14">
+                            <p className="text-xs text-gray-400">{asset.memo || `${asset.quantity}주 @ ${sym}${currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}`}</p>
+                          </td>
+                          <td />
+                          <td className="px-4 py-2 text-right text-xs text-gray-500">{asset.quantity.toLocaleString()}</td>
+                          <td className="px-4 py-2 text-right text-xs text-gray-500">
+                            매입 {sym}{currency === 'KRW' ? formatKRW(asset.purchasePrice) : formatUSD(asset.purchasePrice)}
+                          </td>
+                          <td className="px-4 py-2 text-right text-xs text-gray-400">₩{formatKRW(subCurrentVal)}</td>
+                          <td className={`px-4 py-2 text-right text-xs ${subProfitRate >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {subProfitRate >= 0 ? '+' : ''}{subProfitRate.toFixed(2)}%
+                          </td>
+                          <td className="px-4 py-2">
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={() => setModal(asset)} className="text-xs text-gray-400 hover:text-white transition px-2 py-1 rounded hover:bg-gray-700">수정</button>
+                              <button onClick={() => handleDelete(asset)} className="text-xs text-gray-400 hover:text-red-400 transition px-2 py-1 rounded hover:bg-gray-700">삭제</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }) : []),
+                  ]
+                }
+
+                // 단일 자산 행
+                const { asset } = row
                 const rate = settings.exchangeRate
                 const currentVal = toKRW(asset.currentPrice, asset.quantity, asset.currency, rate)
                 const profitRate = calcReturn(asset.purchasePrice, asset.currentPrice)
@@ -451,7 +577,7 @@ export default function Assets() {
                 return (
                   <tr key={asset.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
                     <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 pl-6">
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: CATEGORIES[asset.category]?.color }} />
                         <div>
                           <p className="text-white font-medium">{asset.name}</p>

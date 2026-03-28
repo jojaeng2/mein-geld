@@ -7,6 +7,13 @@ import { useSettings } from '../hooks/useSettings'
 import { CATEGORIES } from '../lib/constants'
 import { formatKRW, toKRW, calcReturn, calcProfit } from '../lib/utils'
 
+// 상세 비중 차트용 색상 팔레트
+const DETAIL_COLORS = [
+  '#818cf8', '#a78bfa', '#60a5fa', '#34d399', '#fbbf24',
+  '#f87171', '#fb923c', '#f472b6', '#4ade80', '#38bdf8',
+  '#e879f9', '#facc15', '#2dd4bf', '#c084fc', '#7dd3fc',
+]
+
 function StatCard({ label, value, sub, color }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -19,11 +26,12 @@ function StatCard({ label, value, sub, color }) {
 
 function CustomTooltip({ active, payload }) {
   if (active && payload && payload.length) {
-    const { name, value } = payload[0].payload
+    const { name, value, pct } = payload[0].payload
     return (
       <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
         <p className="text-white font-medium">{name}</p>
         <p className="text-gray-300">₩{formatKRW(value)}</p>
+        {pct != null && <p className="text-gray-400 text-xs">{pct.toFixed(1)}%</p>}
       </div>
     )
   }
@@ -40,7 +48,6 @@ export default function Dashboard() {
 
     let totalCurrent = 0
     let totalPurchase = 0
-
     const byCategory = {}
 
     for (const asset of assets) {
@@ -48,7 +55,6 @@ export default function Dashboard() {
       const purchase = toKRW(asset.purchasePrice, asset.quantity, asset.currency, rate)
       totalCurrent += current
       totalPurchase += purchase
-
       if (!byCategory[asset.category]) byCategory[asset.category] = 0
       byCategory[asset.category] += current
     }
@@ -59,10 +65,33 @@ export default function Dashboard() {
     const pieData = Object.entries(byCategory).map(([cat, value]) => ({
       name: CATEGORIES[cat]?.label || cat,
       value,
+      pct: totalCurrent > 0 ? (value / totalCurrent) * 100 : 0,
       color: CATEGORIES[cat]?.color || '#6b7280',
     }))
 
     return { totalCurrent, totalPurchase, profitAmt, profitRate, pieData }
+  }, [assets, settings.exchangeRate])
+
+  // 종목별 상세 비중 (동일 티커 합산)
+  const detailData = useMemo(() => {
+    const rate = settings.exchangeRate
+    const map = new Map()
+
+    for (const asset of assets) {
+      const key = asset.ticker || asset.name
+      const val = toKRW(asset.currentPrice, asset.quantity, asset.currency, rate)
+      if (!map.has(key)) map.set(key, { name: asset.name, value: 0 })
+      map.get(key).value += val
+    }
+
+    const total = Array.from(map.values()).reduce((s, v) => s + v.value, 0)
+    return Array.from(map.values())
+      .sort((a, b) => b.value - a.value)
+      .map((item, i) => ({
+        ...item,
+        pct: total > 0 ? (item.value / total) * 100 : 0,
+        color: DETAIL_COLORS[i % DETAIL_COLORS.length],
+      }))
   }, [assets, settings.exchangeRate])
 
   const topAssets = useMemo(() => {
@@ -110,42 +139,77 @@ export default function Dashboard() {
           <p className="text-sm text-gray-500 mt-1">자산 관리 메뉴에서 자산을 추가해보세요.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Pie Chart */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-medium text-gray-400 mb-4">카테고리별 비중</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={stats?.pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={70}
-                  outerRadius={100}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {stats?.pieData.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  formatter={(value) => <span className="text-xs text-gray-300">{value}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+        <>
+          {/* 두 가지 비중 차트 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 카테고리별 비중 */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="text-sm font-medium text-gray-400 mb-4">카테고리별 비중</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={stats?.pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={100}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {stats?.pieData.map((entry, index) => (
+                      <Cell key={index} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    formatter={(value, entry) => (
+                      <span className="text-xs text-gray-300">
+                        {value} <span className="text-gray-500">{entry.payload.pct?.toFixed(1)}%</span>
+                      </span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* 종목별 상세 비중 */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h3 className="text-sm font-medium text-gray-400 mb-4">종목별 상세 비중</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={detailData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {detailData.map((entry, index) => (
+                      <Cell key={index} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    formatter={(value, entry) => (
+                      <span className="text-xs text-gray-300">
+                        {value} <span className="text-gray-500">{entry.payload.pct?.toFixed(1)}%</span>
+                      </span>
+                    )}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          {/* Top Assets */}
+          {/* 비중 TOP 5 */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <h3 className="text-sm font-medium text-gray-400 mb-4">비중 TOP 5</h3>
             <div className="space-y-3">
               {topAssets.map((asset) => {
                 const rate = settings.exchangeRate
                 const currentVal = toKRW(asset.currentPrice, asset.quantity, asset.currency, rate)
-                const profitAmt = calcProfit(asset.purchasePrice, asset.currentPrice, asset.quantity)
-                const profitKRW = asset.currency === 'USD' ? profitAmt * rate : profitAmt
                 const profitRate = calcReturn(asset.purchasePrice, asset.currentPrice)
                 const pct = stats?.totalCurrent > 0 ? (currentVal / stats.totalCurrent) * 100 : 0
 
@@ -157,7 +221,7 @@ export default function Dashboard() {
                           className="w-2 h-2 rounded-full flex-shrink-0"
                           style={{ backgroundColor: CATEGORIES[asset.category]?.color }}
                         />
-                        <span className="text-sm text-white truncate max-w-[120px]">{asset.name}</span>
+                        <span className="text-sm text-white truncate max-w-[160px]">{asset.name}</span>
                       </div>
                       <div className="text-right">
                         <span className="text-sm text-white">₩{formatKRW(currentVal)}</span>
@@ -181,7 +245,7 @@ export default function Dashboard() {
               })}
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
