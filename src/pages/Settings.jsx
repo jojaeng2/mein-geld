@@ -2,12 +2,17 @@ import { useState } from 'react'
 import { useSettings } from '../hooks/useSettings'
 import { useAssets } from '../hooks/useAssets'
 import { useSnapshots } from '../hooks/useSnapshots'
+import { useAuth } from '../contexts/AuthContext'
 import { formatKRW } from '../lib/utils'
+
+const ADMIN_EMAIL = 'ds4ouj@naver.com'
 
 export default function Settings() {
   const { settings, saveSettings, refreshRate, rateUpdating } = useSettings()
   const { assets, addAsset } = useAssets()
   const { snapshots } = useSnapshots()
+  const { user } = useAuth()
+  const isAdmin = user?.email === ADMIN_EMAIL
 
   const [rate, setRate] = useState('')
   const [rateSaved, setRateSaved] = useState(false)
@@ -132,35 +137,37 @@ export default function Settings() {
         </form>
       </div>
 
-      {/* Invite code */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h3 className="text-sm font-medium text-white mb-1">초대 코드 설정</h3>
-        <p className="text-xs text-gray-500 mb-4">
-          회원가입 시 필요한 코드입니다. 본인과 여자친구만 알 수 있도록 설정해주세요.
-        </p>
-        {settings.inviteCode && (
-          <p className="text-sm text-gray-400 mb-3">
-            현재 코드:{' '}
-            <span className="text-white font-medium font-mono">{settings.inviteCode}</span>
+      {/* Invite code - admin only */}
+      {isAdmin && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-sm font-medium text-white mb-1">초대 코드 설정</h3>
+          <p className="text-xs text-gray-500 mb-4">
+            회원가입 시 필요한 코드입니다. 본인과 여자친구만 알 수 있도록 설정해주세요.
           </p>
-        )}
-        <form onSubmit={handleSaveInviteCode} className="flex gap-3">
-          <input
-            type="text"
-            className="input w-48"
-            placeholder="새 초대 코드"
-            value={inviteCode}
-            onChange={(e) => setInviteCode(e.target.value)}
-          />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
-          >
-            저장
-          </button>
-          {inviteCodeSaved && <span className="self-center text-sm text-green-400">저장됨!</span>}
-        </form>
-      </div>
+          {settings.inviteCode && (
+            <p className="text-sm text-gray-400 mb-3">
+              현재 코드:{' '}
+              <span className="text-white font-medium font-mono">{settings.inviteCode}</span>
+            </p>
+          )}
+          <form onSubmit={handleSaveInviteCode} className="flex gap-3">
+            <input
+              type="text"
+              className="input w-48"
+              placeholder="새 초대 코드"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
+            >
+              저장
+            </button>
+            {inviteCodeSaved && <span className="self-center text-sm text-green-400">저장됨!</span>}
+          </form>
+        </div>
+      )}
 
       {/* Backup / Restore */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
