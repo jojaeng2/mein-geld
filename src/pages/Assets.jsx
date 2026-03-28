@@ -324,8 +324,6 @@ export default function Assets() {
   const { settings } = useSettings()
   const [modal, setModal] = useState(null)
   const [filter, setFilter] = useState('all')
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshResult, setRefreshResult] = useState(null)
   const [expanded, setExpanded] = useState(new Set())
 
   const filtered = filter === 'all' ? assets : assets.filter((a) => a.category === filter)
@@ -384,71 +382,19 @@ export default function Assets() {
     }
   }
 
-  async function handleRefreshAllPrices() {
-    const targets = assets.filter((a) => a.ticker)
-    if (targets.length === 0) {
-      alert('티커가 설정된 자산이 없습니다.')
-      return
-    }
-    setRefreshing(true)
-    setRefreshResult(null)
-
-    // 같은 티커는 API 1회만 호출
-    const byTicker = new Map()
-    for (const asset of targets) {
-      if (!byTicker.has(asset.ticker)) byTicker.set(asset.ticker, [])
-      byTicker.get(asset.ticker).push(asset)
-    }
-
-    let success = 0
-    const failed = []
-
-    for (const [, records] of byTicker) {
-      try {
-        const price = await fetchAssetPrice(records[0])
-        for (const asset of records) {
-          await updateAsset(asset.id, { ...asset, currentPrice: price })
-        }
-        success += records.length
-        await new Promise((r) => setTimeout(r, 1200))
-      } catch {
-        failed.push(records[0].name)
-      }
-    }
-
-    setRefreshing(false)
-    setRefreshResult({ success, failed })
-  }
-
   if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
 
   return (
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">자산 관리</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={handleRefreshAllPrices}
-            disabled={refreshing}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
-          >
-            {refreshing ? '갱신 중...' : '↻ 현재가 갱신'}
-          </button>
-          <button
-            onClick={() => setModal('add')}
-            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
-          >
-            + 자산 추가
-          </button>
-        </div>
+        <button
+          onClick={() => setModal('add')}
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
+        >
+          + 자산 추가
+        </button>
       </div>
-
-      {refreshResult && (
-        <div className={`text-sm rounded-lg px-4 py-2 border ${refreshResult.failed.length === 0 ? 'text-green-400 bg-green-950 border-green-800' : 'text-yellow-400 bg-yellow-950 border-yellow-800'}`}>
-          {refreshResult.success}개 갱신 완료
-          {refreshResult.failed.length > 0 && ` / 실패: ${refreshResult.failed.join(', ')}`}
-        </div>
-      )}
 
       <div className="flex gap-2 flex-wrap">
         <button
