@@ -692,10 +692,10 @@ export default function Assets() {
     setSellModal(null)
   }
 
-  if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
+  if (loading) return <div className="p-4 text-gray-400">로딩 중...</div>
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 md:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">자산 관리</h2>
         <button onClick={() => setModal({})}
@@ -725,6 +725,7 @@ export default function Assets() {
         </div>
       ) : (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
@@ -862,6 +863,7 @@ export default function Assets() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -870,6 +872,7 @@ export default function Assets() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
             <h3 className="text-sm font-medium text-gray-400">매도 기록</h3>
+
             <div className="flex items-center gap-3">
               <span className={`text-sm font-medium ${totalRealizedGainKRW >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 실현 손익 {totalRealizedGainKRW >= 0 ? '+' : ''}₩{formatKRW(totalRealizedGainKRW)}
@@ -877,6 +880,7 @@ export default function Assets() {
               <span className="text-xs text-gray-600">{sells.length}건</span>
             </div>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
@@ -920,6 +924,7 @@ export default function Assets() {
               })}
             </tbody>
           </table>
+          </div>
           {sells.length > SELLS_PAGE && (
             <div className="px-5 py-3 border-t border-gray-800 text-center">
               <button

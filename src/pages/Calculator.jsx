@@ -204,7 +204,7 @@ export default function Calculator() {
     }))
 
 
-  if (assetsLoading || calcLoading) return <div className="p-8 text-gray-400">로딩 중...</div>
+  if (assetsLoading || calcLoading) return <div className="p-4 text-gray-400">로딩 중...</div>
 
   if (assets.length === 0) {
     return (
@@ -218,7 +218,7 @@ export default function Calculator() {
   }
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 md:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">복리 계산기</h2>
         {saving && <span className="text-xs text-gray-500">저장 중...</span>}
@@ -488,6 +488,7 @@ export default function Calculator() {
               {reinvest ? '재투자 기준 자산가치 기반 환산' : '현금 수령 기준'} · 현재 보유분만 기준
             </span>
           </div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
@@ -506,6 +507,7 @@ export default function Calculator() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

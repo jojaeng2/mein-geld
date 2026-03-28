@@ -265,11 +265,11 @@ export default function Dashboard() {
   const quarterDividend = thisQuarterMonths.reduce((s, m) => s + dividendByMonth[m], 0)
 
   if (assetsLoading || settingsLoading) {
-    return <div className="p-8 text-gray-400">로딩 중...</div>
+    return <div className="p-4 text-gray-400">로딩 중...</div>
   }
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 md:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">대시보드</h2>
       </div>
@@ -315,7 +315,7 @@ export default function Dashboard() {
           <p className="text-sm text-gray-600 text-center py-4">배당 정보가 있는 종목이 없습니다.<br/><span className="text-xs">자산 관리에서 종목별 배당 버튼으로 설정하세요.</span></p>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               <div className={`rounded-lg p-3 ${divPeriod === 'month' ? 'bg-yellow-900/20 border border-yellow-700/40' : 'bg-gray-800'}`}>
                 <p className="text-xs text-gray-500 mb-1">이번달 ({thisMonth + 1}월)</p>
                 <p className="text-lg font-bold text-yellow-400">₩{formatKRW(Math.round(dividendByMonth[thisMonth]))}</p>
@@ -332,7 +332,7 @@ export default function Dashboard() {
             {divPeriod !== 'all' && (
               <div>
                 <p className="text-xs text-gray-500 mb-2">월별 예상 배당금</p>
-                <div className="grid grid-cols-6 gap-1.5">
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                   {dividendByMonth.map((amt, i) => {
                     const month = i + 1
                     const isThisMonth = thisMonth === i

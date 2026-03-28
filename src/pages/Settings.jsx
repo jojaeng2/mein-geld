@@ -87,7 +87,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 md:p-8 space-y-6">
       <h2 className="text-xl font-bold text-white">설정</h2>
 
       {/* Exchange rate */}

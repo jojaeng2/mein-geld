@@ -87,10 +87,10 @@ export default function History() {
     ? Math.min(...filteredData.map((d) => d.total)) * 0.97
     : 0
 
-  if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
+  if (loading) return <div className="p-4 text-gray-400">로딩 중...</div>
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 md:p-8 space-y-6">
       <h2 className="text-xl font-bold text-white">히스토리</h2>
 
       {/* 요약 카드 */}
@@ -207,6 +207,7 @@ export default function History() {
             아직 스냅샷이 없습니다. 대시보드에 접속하면 자동으로 저장됩니다.
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
@@ -254,6 +255,7 @@ export default function History() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
