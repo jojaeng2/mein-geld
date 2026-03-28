@@ -17,10 +17,11 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
 // 로컬: Vite proxy(/naver-stock) | 배포: corsproxy.io
 async function fetchKoreanStockPrice(symbol) {
   const code = symbol.replace(/\.(KS|KQ)$/, '')
+  const naverUrl = `https://m.stock.naver.com/api/stock/${code}/basic`
   const isLocal = window.location.hostname === 'localhost'
   const url = isLocal
     ? `/naver-stock/api/stock/${code}/basic`
-    : `https://corsproxy.io/?url=${encodeURIComponent(`https://m.stock.naver.com/api/stock/${code}/basic`)}`
+    : `https://api.allorigins.win/raw?url=${encodeURIComponent(naverUrl)}`
 
   const res = await fetch(url)
   if (!res.ok) throw new Error('가격 조회 실패')
