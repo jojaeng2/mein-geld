@@ -13,15 +13,14 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
-// 한국 주식/ETF 현재가 (Naver Finance 모바일 API — 무료, 빠름)
+// 한국 주식/ETF 현재가 (Yahoo Finance — 무료, CORS 허용, .KS/.KQ 지원)
 async function fetchKoreanStockPrice(symbol) {
-  const code = symbol.replace(/\.(KS|KQ)$/, '')
-  const res = await fetch(`https://m.stock.naver.com/api/stock/${code}/basic`, {
-    headers: { Referer: 'https://m.stock.naver.com/' },
-  })
+  const res = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`
+  )
   if (!res.ok) throw new Error('가격 조회 실패')
   const data = await res.json()
-  const price = data?.closePrice ? parseFloat(data.closePrice.replace(/,/g, '')) : null
+  const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
   if (!price) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
   return price
 }
