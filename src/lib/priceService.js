@@ -1,4 +1,7 @@
 const TD_KEY = import.meta.env.VITE_TWELVE_DATA_KEY
+const AV_KEY = import.meta.env.VITE_ALPHA_VANTAGE_KEY
+
+const isKoreanTicker = (symbol) => symbol.endsWith('.KS') || symbol.endsWith('.KQ')
 
 // 암호화폐 현재가 (CoinGecko, 키 불필요)
 export async function fetchCryptoPrice(coinId, currency = 'krw') {
@@ -11,19 +14,22 @@ export async function fetchCryptoPrice(coinId, currency = 'krw') {
   return { krw: data[coinId].krw, usd: data[coinId].usd }
 }
 
-// Yahoo Finance 형식(.KS/.KQ) → Twelve Data 형식(:KRX) 변환
-function toTwelveDataSymbol(symbol) {
-  if (symbol.endsWith('.KS') || symbol.endsWith('.KQ')) {
-    return symbol.replace(/\.(KS|KQ)$/, ':KRX')
-  }
-  return symbol
+// 한국 주식/ETF 현재가 (Alpha Vantage — .KS/.KQ)
+async function fetchKoreanStockPrice(symbol) {
+  const res = await fetch(
+    `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${AV_KEY}`
+  )
+  if (!res.ok) throw new Error('Alpha Vantage 조회 실패')
+  const data = await res.json()
+  const quote = data['Global Quote']
+  if (!quote || !quote['05. price']) throw new Error(`종목을 찾을 수 없습니다: ${symbol}`)
+  return parseFloat(quote['05. price'])
 }
 
-// 주식/ETF 현재가 (Twelve Data — 800회/일 무료)
-export async function fetchStockPrice(symbol) {
-  const tdSymbol = toTwelveDataSymbol(symbol)
+// 미국 주식/ETF 현재가 (Twelve Data — 800회/일)
+async function fetchUSStockPrice(symbol) {
   const res = await fetch(
-    `https://api.twelvedata.com/price?symbol=${encodeURIComponent(tdSymbol)}&apikey=${TD_KEY}`
+    `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${TD_KEY}`
   )
   if (!res.ok) throw new Error('Twelve Data 조회 실패')
   const data = await res.json()
@@ -31,15 +37,17 @@ export async function fetchStockPrice(symbol) {
   return parseFloat(data.price)
 }
 
-// 자산 카테고리에 따라 적절한 API 호출 → 현재 단가 반환
+// 자산 카테고리·티커에 따라 적절한 API 호출 → 현재 단가 반환
 export async function fetchAssetPrice(asset) {
   if (!asset.ticker) throw new Error('티커가 설정되지 않았습니다.')
 
   if (asset.category === 'crypto') {
     const prices = await fetchCryptoPrice(asset.ticker)
     return asset.currency === 'USD' ? prices.usd : prices.krw
+  } else if (isKoreanTicker(asset.ticker)) {
+    return fetchKoreanStockPrice(asset.ticker)
   } else {
-    return fetchStockPrice(asset.ticker)
+    return fetchUSStockPrice(asset.ticker)
   }
 }
 
