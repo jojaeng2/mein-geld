@@ -167,7 +167,7 @@ export default function Calculator() {
         연간배당금: Math.round(divTotal),
       }
     })
-  }, [groups, years, monthlyNum, totalCurrent, reinvest, weightedRate])
+  }, [groups, years, totalMonthlyAdd, totalCurrent, reinvest, weightedRate])
 
   const assetProjection = useMemo(() => {
     const n = years * 12
