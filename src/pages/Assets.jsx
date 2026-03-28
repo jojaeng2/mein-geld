@@ -468,10 +468,13 @@ export default function Assets() {
   const { assets, loading, addAsset, updateAsset, deleteAsset } = useAssets()
   const { settings } = useSettings()
   const { sells, addSell, deleteSell } = useSells()
-  const [modal, setModal]       = useState(null)
-  const [sellModal, setSellModal] = useState(null)
-  const [filter, setFilter]     = useState('all')
-  const [expanded, setExpanded] = useState(new Set())
+  const [modal, setModal]         = useState(null)
+  const [sellModal, setSellModal]   = useState(null)
+  const [filter, setFilter]       = useState('all')
+  const [expanded, setExpanded]   = useState(new Set())
+  const [showAllSells, setShowAllSells] = useState(false)
+
+  const SELLS_PAGE = 10
 
   const totalRealizedGainKRW = sells.reduce((s, sell) => s + (sell.realizedGainKRW ?? 0), 0)
 
@@ -756,7 +759,7 @@ export default function Assets() {
               </tr>
             </thead>
             <tbody>
-              {sells.map((sell) => {
+              {(showAllSells ? sells : sells.slice(0, SELLS_PAGE)).map((sell) => {
                 const sym = CURRENCIES[sell.currency]?.symbol || ''
                 return (
                   <tr key={sell.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition">
@@ -786,6 +789,16 @@ export default function Assets() {
               })}
             </tbody>
           </table>
+          {sells.length > SELLS_PAGE && (
+            <div className="px-5 py-3 border-t border-gray-800 text-center">
+              <button
+                onClick={() => setShowAllSells((v) => !v)}
+                className="text-xs text-gray-400 hover:text-white transition"
+              >
+                {showAllSells ? '접기 ▲' : `${sells.length - SELLS_PAGE}건 더 보기 ▼`}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
