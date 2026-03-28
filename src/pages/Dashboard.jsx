@@ -186,6 +186,25 @@ export default function Dashboard() {
   const taxableGain  = Math.max(0, overseasGainThisYear - DEDUCTION)
   const estimatedTax = Math.round(taxableGain * 0.22)
 
+  // 예상 배당금: divPerShare > 0 && divMonths 있는 자산만
+  const dividendByMonth = useMemo(() => {
+    const rate = settings.exchangeRate
+    const monthly = Array(12).fill(0)
+    for (const asset of assets) {
+      if (!asset.divPerShare || !asset.divMonths?.length) continue
+      // 1주당 배당금 × 보유 수량 → KRW 환산
+      const divKRW = toKRW(asset.divPerShare, asset.quantity, asset.currency, rate)
+      const perPayout = divKRW / asset.divMonths.length
+      for (const m of asset.divMonths) {
+        monthly[m - 1] += perPayout
+      }
+    }
+    return monthly
+  }, [assets, settings.exchangeRate])
+
+  const annualDividend = dividendByMonth.reduce((s, v) => s + v, 0)
+  const hasDividend = annualDividend > 0
+
   if (assetsLoading || settingsLoading) {
     return <div className="p-8 text-gray-400">로딩 중...</div>
   }
@@ -219,6 +238,55 @@ export default function Dashboard() {
           color={!stats ? 'text-white' : stats.profitRate >= 0 ? 'text-green-400' : 'text-red-400'}
         />
       </div>
+
+      {/* 예상 배당금 */}
+      {hasDividend && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-gray-400">예상 배당금</h3>
+            <span className="text-xs text-gray-600">배당수익률 기준 추정치</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mb-5">
+            <div>
+              <p className="text-xs text-gray-500 mb-1">연간 예상 배당금</p>
+              <p className="text-2xl font-bold text-yellow-400">₩{formatKRW(Math.round(annualDividend))}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-1">월 평균</p>
+              <p className="text-2xl font-bold text-white">₩{formatKRW(Math.round(annualDividend / 12))}</p>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 mb-2">월별 예상 배당금</p>
+            <div className="grid grid-cols-6 gap-1.5">
+              {dividendByMonth.map((amt, i) => {
+                const month = i + 1
+                const now = new Date()
+                const isThisMonth = now.getMonth() === i
+                const max = Math.max(...dividendByMonth)
+                const pct = max > 0 ? (amt / max) * 100 : 0
+                return (
+                  <div key={month} className={`rounded-lg p-2 text-center ${isThisMonth ? 'bg-yellow-900/30 border border-yellow-700/50' : 'bg-gray-800'}`}>
+                    <p className="text-xs text-gray-500 mb-1">{month}월</p>
+                    {amt > 0 ? (
+                      <>
+                        <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
+                          <div className="bg-yellow-500 h-1 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-xs font-medium text-yellow-400">
+                          {amt >= 10000 ? `${Math.round(amt / 10000)}만` : formatKRW(Math.round(amt))}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-700">-</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 실현 손익 */}
       {(

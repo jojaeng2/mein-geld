@@ -106,7 +106,7 @@ export default function Calculator() {
           category: cat,
           currentValue,
           capitalRate: capitalRates[key] ?? DEFAULT_CAPITAL[cat] ?? 8,
-          divRate:     divRates[key]     ?? DEFAULT_DIVIDEND[cat] ?? 0,
+          divRate:     divRates[key]     ?? records[0].divRate ?? DEFAULT_DIVIDEND[cat] ?? 0,
         }
       })
       .filter((g) => g.currentValue > 0)

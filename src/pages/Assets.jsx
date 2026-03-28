@@ -17,6 +17,9 @@ const EMPTY_FORM = {
   currentPrice: '',
   currency: 'KRW',
   ticker: '',
+  divRate: '',
+  divPerShare: '',
+  divMonths: [],
   memo: '',
   // 예금/적금 전용
   interestRate: '',
@@ -268,6 +271,9 @@ function AssetModal({ initial, onSave, onClose }) {
       payload.quantity      = Number(form.quantity)
       payload.purchasePrice = Number(form.purchasePrice)
       payload.currentPrice  = Number(form.currentPrice)
+      payload.divRate       = Number(form.divRate) || 0
+      payload.divPerShare   = Number(form.divPerShare) || 0
+      payload.divMonths     = form.divMonths || []
     }
 
     await onSave(payload)
@@ -340,11 +346,40 @@ function AssetModal({ initial, onSave, onClose }) {
                 </div>
               </div>
 
-              <div>
-                <label className="label">현재 단가</label>
-                <input required type="number" min="0" step="any" className="input" placeholder="가격 조회 또는 직접 입력"
-                  value={form.currentPrice} onChange={(e) => set('currentPrice', e.target.value)} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">현재 단가</label>
+                  <input required type="number" min="0" step="any" className="input" placeholder="가격 조회 또는 직접 입력"
+                    value={form.currentPrice} onChange={(e) => set('currentPrice', e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">1주당 배당금 <span className="text-gray-600 font-normal">선택</span></label>
+                  <input type="number" min="0" step="any" className="input"
+                    placeholder={form.currency === 'KRW' ? '원 단위' : 'USD 단위'}
+                    value={form.divPerShare} onChange={(e) => set('divPerShare', e.target.value)} />
+                </div>
               </div>
+
+              {Number(form.divPerShare) > 0 && (
+                <div>
+                  <label className="label">배당 지급 월 <span className="text-gray-600 font-normal">선택 (복수 가능)</span></label>
+                  <div className="grid grid-cols-6 gap-1 mt-1">
+                    {[1,2,3,4,5,6,7,8,9,10,11,12].map((m) => {
+                      const checked = (form.divMonths || []).includes(m)
+                      return (
+                        <button key={m} type="button"
+                          onClick={() => {
+                            const cur = form.divMonths || []
+                            set('divMonths', checked ? cur.filter(x => x !== m) : [...cur, m].sort((a,b)=>a-b))
+                          }}
+                          className={`py-1 rounded text-xs font-medium border transition-colors ${checked ? 'bg-blue-600 text-white border-blue-600' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}`}>
+                          {m}월
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
