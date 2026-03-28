@@ -132,6 +132,44 @@ export default function Settings() {
         </form>
       </div>
 
+      {/* Alpha Vantage API Key */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-medium text-white mb-1">Alpha Vantage API 키</h3>
+        <p className="text-xs text-gray-500 mb-4">
+          주식/ETF 자동 가격 조회에 사용됩니다. 암호화폐는 키 없이도 자동 조회됩니다.{' '}
+          <span className="text-brand-400">alphavantage.co</span>에서 무료 발급
+        </p>
+        {settings.alphaVantageKey && (
+          <p className="text-sm text-gray-400 mb-3">
+            현재 키:{' '}
+            <span className="text-white font-mono">{'•'.repeat(8) + settings.alphaVantageKey.slice(-4)}</span>
+          </p>
+        )}
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault()
+            const val = e.target.elements.avkey.value.trim()
+            if (!val) return
+            await saveSettings({ ...settings, alphaVantageKey: val })
+            e.target.reset()
+          }}
+          className="flex gap-3"
+        >
+          <input
+            name="avkey"
+            type="text"
+            className="input w-56"
+            placeholder="API 키 입력"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
+          >
+            저장
+          </button>
+        </form>
+      </div>
+
       {/* Invite code */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h3 className="text-sm font-medium text-white mb-1">초대 코드 설정</h3>

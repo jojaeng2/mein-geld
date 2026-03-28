@@ -3,6 +3,7 @@ import { useAssets } from '../hooks/useAssets'
 import { useSettings } from '../hooks/useSettings'
 import { CATEGORIES, CURRENCIES } from '../lib/constants'
 import { formatKRW, formatUSD, toKRW, calcReturn } from '../lib/utils'
+import { fetchAssetPrice } from '../lib/priceService'
 
 const EMPTY_FORM = {
   name: '',
@@ -11,15 +12,45 @@ const EMPTY_FORM = {
   purchasePrice: '',
   currentPrice: '',
   currency: 'KRW',
+  ticker: '',
   memo: '',
 }
 
-function AssetModal({ initial, onSave, onClose }) {
+const TICKER_HINTS = {
+  stock: '국내: 005930.KS / 미국: AAPL',
+  crypto: 'bitcoin, ethereum, ripple',
+  cash: '',
+  real_estate: '',
+  pension: '',
+  other: '',
+}
+
+function AssetModal({ initial, onSave, onClose, alphaVantageKey, exchangeRate }) {
   const [form, setForm] = useState(initial || EMPTY_FORM)
   const [loading, setLoading] = useState(false)
+  const [fetchingPrice, setFetchingPrice] = useState(false)
+  const [priceError, setPriceError] = useState('')
 
   function set(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
+  }
+
+  async function handleFetchPrice() {
+    if (!form.ticker) return
+    setPriceError('')
+    setFetchingPrice(true)
+    try {
+      const price = await fetchAssetPrice(
+        { ticker: form.ticker, category: form.category, currency: form.currency },
+        alphaVantageKey,
+        exchangeRate
+      )
+      set('currentPrice', String(price))
+    } catch (e) {
+      setPriceError(e.message)
+    } finally {
+      setFetchingPrice(false)
+    }
   }
 
   async function handleSubmit(e) {
@@ -35,10 +66,11 @@ function AssetModal({ initial, onSave, onClose }) {
   }
 
   const isEdit = Boolean(initial?.id)
+  const hasTicker = ['stock', 'crypto'].includes(form.category)
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-bold text-white mb-5">
           {isEdit ? '자산 수정' : '자산 추가'}
         </h3>
@@ -81,6 +113,35 @@ function AssetModal({ initial, onSave, onClose }) {
               </select>
             </div>
 
+            {hasTicker && (
+              <div className="col-span-2">
+                <label className="label">
+                  티커 코드{' '}
+                  <span className="text-gray-600 font-normal">(자동 가격 조회용)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    className="input"
+                    placeholder={TICKER_HINTS[form.category]}
+                    value={form.ticker}
+                    onChange={(e) => set('ticker', e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={!form.ticker || fetchingPrice}
+                    onClick={handleFetchPrice}
+                    className="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white text-xs rounded-lg transition whitespace-nowrap"
+                  >
+                    {fetchingPrice ? '조회 중...' : '가격 조회'}
+                  </button>
+                </div>
+                {priceError && (
+                  <p className="text-xs text-red-400 mt-1">{priceError}</p>
+                )}
+                <p className="text-xs text-gray-600 mt-1">{TICKER_HINTS[form.category]}</p>
+              </div>
+            )}
+
             <div>
               <label className="label">수량</label>
               <input
@@ -117,7 +178,7 @@ function AssetModal({ initial, onSave, onClose }) {
                 min="0"
                 step="any"
                 className="input"
-                placeholder="0"
+                placeholder="티커 조회 또는 직접 입력"
                 value={form.currentPrice}
                 onChange={(e) => set('currentPrice', e.target.value)}
               />
@@ -159,8 +220,10 @@ function AssetModal({ initial, onSave, onClose }) {
 export default function Assets() {
   const { assets, loading, addAsset, updateAsset, deleteAsset } = useAssets()
   const { settings } = useSettings()
-  const [modal, setModal] = useState(null) // null | 'add' | asset object
+  const [modal, setModal] = useState(null)
   const [filter, setFilter] = useState('all')
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshResult, setRefreshResult] = useState(null)
 
   const filtered = filter === 'all' ? assets : assets.filter((a) => a.category === filter)
 
@@ -179,19 +242,68 @@ export default function Assets() {
     }
   }
 
+  // 티커가 있는 자산 현재가 일괄 갱신
+  async function handleRefreshAllPrices() {
+    const targets = assets.filter((a) => a.ticker)
+    if (targets.length === 0) {
+      alert('티커가 설정된 자산이 없습니다.')
+      return
+    }
+
+    setRefreshing(true)
+    setRefreshResult(null)
+    let success = 0
+    let failed = []
+
+    for (const asset of targets) {
+      try {
+        const price = await fetchAssetPrice(
+          asset,
+          settings.alphaVantageKey,
+          settings.exchangeRate
+        )
+        await updateAsset(asset.id, { ...asset, currentPrice: price })
+        success++
+        // API 레이트 리밋 방지
+        await new Promise((r) => setTimeout(r, 1200))
+      } catch {
+        failed.push(asset.name)
+      }
+    }
+
+    setRefreshing(false)
+    setRefreshResult({ success, failed })
+  }
+
   if (loading) return <div className="p-8 text-gray-400">로딩 중...</div>
 
   return (
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-white">자산 관리</h2>
-        <button
-          onClick={() => setModal('add')}
-          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
-        >
-          + 자산 추가
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleRefreshAllPrices}
+            disabled={refreshing}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
+          >
+            {refreshing ? '갱신 중...' : '↻ 현재가 갱신'}
+          </button>
+          <button
+            onClick={() => setModal('add')}
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg transition"
+          >
+            + 자산 추가
+          </button>
+        </div>
       </div>
+
+      {refreshResult && (
+        <div className={`text-sm rounded-lg px-4 py-2 border ${refreshResult.failed.length === 0 ? 'text-green-400 bg-green-950 border-green-800' : 'text-yellow-400 bg-yellow-950 border-yellow-800'}`}>
+          {refreshResult.success}개 갱신 완료
+          {refreshResult.failed.length > 0 && ` / 실패: ${refreshResult.failed.join(', ')}`}
+        </div>
+      )}
 
       {/* Category filter */}
       <div className="flex gap-2 flex-wrap">
@@ -248,7 +360,12 @@ export default function Assets() {
                         />
                         <div>
                           <p className="text-white font-medium">{asset.name}</p>
-                          {asset.memo && <p className="text-xs text-gray-500">{asset.memo}</p>}
+                          {asset.ticker && (
+                            <p className="text-xs text-gray-500 font-mono">{asset.ticker}</p>
+                          )}
+                          {asset.memo && !asset.ticker && (
+                            <p className="text-xs text-gray-500">{asset.memo}</p>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -294,6 +411,8 @@ export default function Assets() {
           initial={modal === 'add' ? null : modal}
           onSave={handleSave}
           onClose={() => setModal(null)}
+          alphaVantageKey={settings.alphaVantageKey}
+          exchangeRate={settings.exchangeRate}
         />
       )}
     </div>
