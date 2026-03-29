@@ -242,7 +242,8 @@ function AssetModal({ initial, onSave, onClose }) {
 
   async function handleTickerSelect(item) {
     const isKorean = item.symbol.endsWith('.KS') || item.symbol.endsWith('.KQ')
-    const currency = isKorean ? 'KRW' : 'USD'
+    // 암호화폐는 사용자가 선택한 통화 유지 (업비트=KRW, 바이낸스=USD)
+    const currency = form.category === 'crypto' ? form.currency : (isKorean ? 'KRW' : 'USD')
     setForm((f) => ({ ...f, ticker: item.symbol, name: item.name, currency }))
     // 티커가 확정됐으므로 바로 가격 조회
     if (item.symbol) {
